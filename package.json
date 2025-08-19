@@ -1,0 +1,47 @@
+{
+  "name": "markinjs",
+  "version": "0.0.1",
+  "description": "A lightweight, zero-dependency SVG annotation library for computer vision and image labeling projects",
+  "main": "markin.js",
+  "files": [
+    "markin.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "echo 'Build script not yet implemented'",
+    "test": "echo 'Tests not yet implemented'",
+    "example": "echo 'Open examples/index.html in your browser'",
+    "dev": "echo 'Open examples/index.html in your browser for development'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/datamarkin/markinjs.git"
+  },
+  "keywords": [
+    "svg",
+    "annotation",
+    "computer-vision",
+    "image-labeling",
+    "bbox",
+    "polygon",
+    "keypoints",
+    "machine-learning",
+    "data-annotation",
+    "no-dependencies"
+  ],
+  "author": "Datamarkin <markinjs@datamarkin.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/datamarkin/markinjs/issues"
+  },
+  "homepage": "https://github.com/datamarkin/markinjs#readme",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}

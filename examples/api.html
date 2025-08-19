@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html class="has-navbar-fixed-top" lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>MarkinJS API Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="assets/css/bulma.min.css">
+    <link rel="stylesheet" href="assets/css/child.css">
+    <style>
+        .code-highlight {
+            background-color: #f5f5f5;
+            border-left: 4px solid #3273dc;
+            padding: 1rem;
+            margin: 1rem 0;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .section-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+        }
+        
+        .sidebar {
+            position: sticky;
+            top: 80px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+        }
+        
+        .menu-item {
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+        
+        .menu-item:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        .method-signature {
+            background-color: #f0f8ff;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border: 1px solid #ddd;
+        }
+        
+        .parameter {
+            background-color: #fff5f5;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
+        
+        h1, h2, h3, h4 {
+            scroll-margin-top: 80px;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar is-fixed-top is-white" role="navigation" aria-label="main navigation">
+        <div class="container">
+            <div class="navbar-brand">
+                <a class="navbar-item" href="index.html">
+                    <strong>MarkinJS</strong>
+                </a>
+            </div>
+            <div class="navbar-menu">
+                <div class="navbar-end">
+                    <div class="navbar-item">
+                        <div class="buttons">
+                            <a href="api.html" class="button is-light">
+                                API Documentation
+                            </a>
+                            <a href="index.html" class="button is-dark">
+                                Home
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero section-header">
+        <div class="hero-body">
+            <div class="container">
+                <h1 class="title is-2">MarkinJS API Documentation</h1>
+                <p class="subtitle is-4">Complete guide to getting started and API reference</p>
+            </div>
+        </div>
+    </section>
+
+    <div class="container">
+        <section class="section">
+            <div class="columns">
+                <!-- Sidebar Navigation -->
+                <div class="column is-3">
+                    <div class="sidebar">
+                        <aside class="menu">
+                            <p class="menu-label">Getting Started</p>
+                            <ul class="menu-list">
+                                <li><a href="#what-is-MarkinJS" class="menu-item">What is VivaSVG?</a></li>
+                                <li><a href="#installation" class="menu-item">Installation</a></li>
+                                <li><a href="#quick-start" class="menu-item">Quick Start</a></li>
+                                <li><a href="#common-use-cases" class="menu-item">Common Use Cases</a></li>
+                                <li><a href="#interactive-features" class="menu-item">Interactive Features</a></li>
+                                <li><a href="#configuration" class="menu-item">Configuration</a></li>
+                                <li><a href="#best-practices" class="menu-item">Best Practices</a></li>
+                            </ul>
+                            <p class="menu-label">API Reference</p>
+                            <ul class="menu-list">
+                                <li><a href="#initialization" class="menu-item">Initialization</a></li>
+                                <li><a href="#core-methods" class="menu-item">Core Methods</a></li>
+                                <li><a href="#event-system" class="menu-item">Event System</a></li>
+                                <li><a href="#annotation-creation" class="menu-item">Annotation Creation</a></li>
+                                <li><a href="#element-management" class="menu-item">Element Management</a></li>
+                                <li><a href="#advanced-usage" class="menu-item">Advanced Usage</a></li>
+                            </ul>
+                        </aside>
+                    </div>
+                </div>
+
+                <!-- Main Content -->
+                <div class="column is-9">
+                    <div class="content">
+                        <!-- Getting Started Section -->
+                        <section id="what-is-MarkinJS">
+                            <h2 class="title is-3">What is MarkinJS?</h2>
+                            <p>MarkinJS is a lightweight, zero-dependency library for creating precise SVG-based annotations on images. It's perfect for computer vision datasets, machine learning training data, and research projects that need pixel-perfect annotation tools.</p>
+                        </section>
+
+                        <section id="installation">
+                            <h2 class="title is-3">Installation</h2>
+
+                            <h3 class="title is-4">Download</h3>
+                            <p>Download <code>markin.js</code> from the releases page and include it in your HTML:</p>
+                            <div class="code-highlight">
+                                <pre><code>&lt;script src="path/to/markin.js"&gt;&lt;/script&gt;</code></pre>
+                            </div>
+                        </section>
+
+                        <section id="quick-start">
+                            <h2 class="title is-3">Quick Start</h2>
+                            
+                            <h3 class="title is-4">Step 1: Prepare Your HTML</h3>
+                            <div class="code-highlight">
+                                <pre><code>&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+    &lt;title&gt;My Annotation Tool&lt;/title&gt;
+    &lt;script src="markin .js"&gt;&lt;/script&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;img id="my-image" src="image.jpg" alt="Image to annotate"&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">Step 2: Initialize the Annotator</h3>
+                            <div class="code-highlight">
+                                <pre><code>// Create annotator on your image
+const annotator = MarkinJS.createImageAnnotator('my-image', {
+    keyboardControls: true,
+    zoom: 1.0
+});
+
+// Listen for when annotations are created
+annotator.on('annotationcreated', function(data) {
+    console.log('New annotation:', data);
+});</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">Step 3: Create Your First Annotation</h3>
+                            <div class="code-highlight">
+                                <pre><code>// Add a bounding box for object detection
+annotator.createAnnotation({
+    class: "person",
+    bbox: [100, 100, 300, 400]
+});</code></pre>
+                            </div>
+                            <p>That's it! You now have a working annotation tool.</p>
+                        </section>
+
+                        <section id="common-use-cases">
+                            <h2 class="title is-3">Common Use Cases</h2>
+                            
+                            <h3 class="title is-4">1. Object Detection Dataset</h3>
+                            <div class="code-highlight">
+                                <pre><code>const detector = MarkinJS.createImageAnnotator('dataset-image');
+
+// Add person detection
+detector.createAnnotation({
+    class: "person",
+    bbox: [150, 100, 300, 400]
+});
+
+// Add car detection
+detector.createAnnotation({
+    class: "car", 
+    bbox: [400, 200, 600, 350]
+});
+
+// Export annotations for training
+detector.on('annotationcreated', (data) => {
+    saveAnnotation({
+        image: 'dataset-image.jpg',
+        class: data.class,
+        bbox: getBBoxCoordinates(data.group)
+    });
+});</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">2. Instance Segmentation</h3>
+                            <div class="code-highlight">
+                                <pre><code>const segmenter = MarkinJS.createImageAnnotator('segmentation-image');
+
+// Create annotation with precise polygon outline
+segmenter.createAnnotation({
+    class: "building",
+    bbox: [200, 150, 500, 400],
+    segmentation: [220, 170, 480, 170, 480, 380, 350, 380, 220, 300],
+    bindElements: true  // Polygon moves with bounding box
+});</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">3. Keypoint Detection</h3>
+                            <div class="code-highlight">
+                                <pre><code>const keypointDetector = MarkinJS.createImageAnnotator('keypoint-image');
+
+// Facial keypoint annotation
+keypointDetector.createAnnotation({
+    class: "face",
+    bbox: [100, 80, 200, 180],
+    keypoints: [
+        { name: "left_eye", point: [130, 110] },
+        { name: "right_eye", point: [170, 110] },
+        { name: "nose", point: [150, 130] },
+        { name: "mouth", point: [150, 150] }
+    ],
+    containRules: ["keypoint"]  // Keep keypoints inside bbox
+});</code></pre>
+                            </div>
+                        </section>
+
+                        <section id="interactive-features">
+                            <h2 class="title is-3">Interactive Features</h2>
+                            
+                            <h3 class="title is-4">Keyboard Controls</h3>
+                            <p>Once an element is selected, you can move it precisely:</p>
+                            <div class="content">
+                                <ul>
+                                    <li><strong>Arrow Keys</strong>: Move 1 pixel</li>
+                                    <li><strong>Shift + Arrow Keys</strong>: Move 10 pixels</li>
+                                    <li><strong>Ctrl + Arrow Keys</strong>: Move 0.2 pixels (sub-pixel precision)</li>
+                                    <li><strong>Delete Key</strong>: Remove selected annotation</li>
+                                </ul>
+                            </div>
+
+                            <h3 class="title is-4">Mouse Interactions</h3>
+                            <div class="content">
+                                <ul>
+                                    <li><strong>Click</strong>: Select elements</li>
+                                    <li><strong>Drag</strong>: Move elements around</li>
+                                    <li><strong>Handles</strong>: Resize bounding boxes by dragging corners/edges</li>
+                                </ul>
+                            </div>
+
+                            <h3 class="title is-4">Event Handling</h3>
+                            <div class="code-highlight">
+                                <pre><code>// Track user interactions
+annotator.on('select', (data) => {
+    console.log('Selected:', data.type, data.class);
+    showEditPanel(data);
+});
+
+annotator.on('elementmoved', (data) => {
+    console.log('Moved to:', data.position);
+    updateCoordinateDisplay(data.position);
+});
+
+annotator.on('delete', (data) => {
+    console.log('Deleted annotation:', data.groupId);
+    updateAnnotationCount();
+});</code></pre>
+                            </div>
+                        </section>
+
+                        <section id="configuration">
+                            <h2 class="title is-3">Configuration Options</h2>
+                            
+                            <h3 class="title is-4">Basic Configuration</h3>
+                            <div class="code-highlight">
+                                <pre><code>const annotator = MarkinJS.createImageAnnotator('image', {
+    // Enable keyboard arrow key movement
+    keyboardControls: true,
+    
+    // Current zoom level
+    zoom: 1.0,
+    
+    // Bind child elements to parent elements
+    bindElements: true,
+    
+    // Keep polygons inside bounding boxes
+    bboxContainPolygon: true,
+    
+    // Keep keypoints inside bounding boxes  
+    bboxContainKeypoints: true
+});</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">Advanced Deletion Rules</h3>
+                            <div class="code-highlight">
+                                <pre><code>const annotator = MarkinJS.createImageAnnotator('image', {
+    deletionRules: {
+        // When bbox is deleted, also delete keypoints and polygons
+        "bbox": ["keypoint", "polygon"],
+        
+        // When keypoint is deleted, don't delete anything else
+        "keypoint": [],
+        
+        // When polygon is deleted, also delete bbox
+        "polygon": ["bbox"]
+    }
+});</code></pre>
+                            </div>
+                        </section>
+
+                        <section id="best-practices">
+                            <h2 class="title is-3">Best Practices</h2>
+                            
+                            <h3 class="title is-4">1. Performance</h3>
+                            <div class="content">
+                                <ul>
+                                    <li>Use event delegation for large numbers of annotations</li>
+                                    <li>Clean up event listeners when destroying annotators</li>
+                                    <li>Consider pagination for datasets with many images</li>
+                                </ul>
+                            </div>
+
+                            <h3 class="title is-4">2. User Experience</h3>
+                            <div class="code-highlight">
+                                <pre><code>// Provide visual feedback
+annotator.on('dragstart', () => {
+    document.body.style.cursor = 'grabbing';
+});
+
+annotator.on('dragend', () => {
+    document.body.style.cursor = 'default';
+});
+
+// Show coordinate information
+annotator.on('elementmoved', (data) => {
+    document.getElementById('coordinates').textContent = 
+        `(${Math.round(data.position.x)}, ${Math.round(data.position.y)})`;
+});</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">3. Data Validation</h3>
+                            <div class="code-highlight">
+                                <pre><code>// Validate annotation data before creating
+function createValidatedAnnotation(data) {
+    if (!data.class) {
+        throw new Error('Annotation must have a class');
+    }
+    
+    if (data.bbox && data.bbox.length !== 4) {
+        throw new Error('Bbox must have exactly 4 coordinates');
+    }
+    
+    annotator.createAnnotation(data);
+}</code></pre>
+                            </div>
+                        </section>
+
+                        <!-- API Reference Section -->
+                        <section id="initialization">
+                            <h2 class="title is-3">API Reference - Initialization</h2>
+                            
+                            <div class="method-signature">
+                                <h3 class="title is-4">MarkinJS.createImageAnnotator(imageId, options)</h3>
+                            </div>
+                            <p>Creates an SVG overlay positioned directly on top of an existing image element.</p>
+                            
+                            <div class="parameter">
+                                <strong>Parameters:</strong><br>
+                                • <code>imageId</code> (String): ID of the image element to overlay<br>
+                                • <code>options</code> (Object): Configuration options
+                            </div>
+                            
+                            <div class="parameter">
+                                <strong>Returns:</strong> Annotator instance
+                            </div>
+
+                            <div class="code-highlight">
+                                <pre><code>const annotator = MarkinJS.createImageAnnotator('my-image', {
+    zoom: 1.0,
+    keyboardControls: true,
+    bindElements: true
+});</code></pre>
+                            </div>
+
+                            <h4 class="title is-5">Additional Methods Available:</h4>
+                            <div class="content">
+                                <ul>
+                                    <li><code>getImageElement()</code>: Returns the underlying image element</li>
+                                    <li><code>getSVGElement()</code>: Returns the generated SVG element</li>
+                                    <li><code>updateDimensions()</code>: Manually updates SVG dimensions to match image</li>
+                                    <li><code>getContainerElement()</code>: Returns the container wrapping image and SVG</li>
+                                </ul>
+                            </div>
+                        </section>
+
+                        <section id="core-methods">
+                            <h2 class="title is-3">Core Methods</h2>
+                            
+                            <div class="method-signature">
+                                <h3 class="title is-4">enable()</h3>
+                                <p>Enables the annotator, allowing user interaction.</p>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">disable()</h3>
+                                <p>Disables the annotator, preventing user interaction.</p>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">setZoom(zoomLevel)</h3>
+                                <p>Sets the zoom level for the annotator.</p>
+                                <div class="parameter">
+                                    <strong>Parameters:</strong><br>
+                                    • <code>zoomLevel</code> (Number): Zoom level (e.g., 1.0 = 100%, 2.0 = 200%)
+                                </div>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">getSelectedElement()</h3>
+                                <p>Returns information about the currently selected element.</p>
+                                <div class="parameter">
+                                    <strong>Returns:</strong> Object with properties:<br>
+                                    • <code>element</code> (SVGElement): The DOM element<br>
+                                    • <code>type</code> (String): Element type ("rect", "circle", "polygon", "g")<br>
+                                    • <code>data</code> (Object): Element-specific data<br>
+                                    • <code>uuid</code> (String): Element UUID (if available)<br>
+                                    • <code>class</code> (String): Element class (if available)
+                                </div>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">deleteSelectedElement()</h3>
+                                <p>Deletes the currently selected element and applies deletion rules.</p>
+                            </div>
+                        </section>
+
+                        <section id="event-system">
+                            <h2 class="title is-3">Event System</h2>
+                            
+                            <div class="method-signature">
+                                <h3 class="title is-4">on(eventName, callback)</h3>
+                                <p>Registers an event handler.</p>
+                                <div class="parameter">
+                                    <strong>Parameters:</strong><br>
+                                    • <code>eventName</code> (String): Name of the event<br>
+                                    • <code>callback</code> (Function): Handler function
+                                </div>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">off(eventName, callback)</h3>
+                                <p>Removes an event handler.</p>
+                            </div>
+
+                            <h3 class="title is-4">Available Events</h3>
+                            <div class="table-container">
+                                <table class="table is-fullwidth is-striped">
+                                    <thead>
+                                        <tr>
+                                            <th>Event</th>
+                                            <th>Description</th>
+                                            <th>Data Object</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td><code>select</code></td>
+                                            <td>Element selected</td>
+                                            <td><code>{element, type, data, uuid, class}</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>deselect</code></td>
+                                            <td>Element deselected</td>
+                                            <td><code>{element, type}</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>annotationcreated</code></td>
+                                            <td>New annotation created</td>
+                                            <td><code>{uuid, class, group, elements}</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>elementmoved</code></td>
+                                            <td>Element moved</td>
+                                            <td><code>{element, type, deltaX, deltaY, position}</code></td>
+                                        </tr>
+                                        <tr>
+                                            <td><code>delete</code></td>
+                                            <td>After element deletion</td>
+                                            <td><code>{role, groupId}</code></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </section>
+
+                        <section id="annotation-creation">
+                            <h2 class="title is-3">Annotation Creation</h2>
+                            
+                            <div class="method-signature">
+                                <h3 class="title is-4">createAnnotation(options)</h3>
+                                <p>Creates a new annotation with the specified options.</p>
+                            </div>
+
+                            <h4 class="title is-5">Annotation Options:</h4>
+                            <div class="code-highlight">
+                                <pre><code>{
+    uuid: "unique-id",              // Optional: auto-generated if not provided
+    class: "person",                // Classification label
+    bbox: [x1, y1, x2, y2],        // Bounding box coordinates
+    segmentation: [x1,y1,x2,y2,...], // Polygon points (flat array)
+    keypoints: [                    // Named keypoints
+        { name: "head", point: [x, y] },
+        { name: "center", point: [x, y] }
+    ],
+    bindElements: true,             // Bind child elements to parent
+    containRules: ["keypoint"],     // Elements to keep inside bbox
+    deletionRules: {                // Custom deletion behavior
+        "bbox": ["keypoint", "polygon"],
+        "polygon": ["bbox"]
+    }
+}</code></pre>
+                            </div>
+                        </section>
+
+                        <section id="element-management">
+                            <h2 class="title is-3">Element Management</h2>
+                            
+                            <h3 class="title is-4">Keyboard Controls</h3>
+                            <p>When enabled, selected elements can be moved using:</p>
+                            <div class="content">
+                                <ul>
+                                    <li><strong>Arrow keys</strong>: Move by 1px</li>
+                                    <li><strong>Shift + Arrow keys</strong>: Move by 10px</li>
+                                    <li><strong>Ctrl + Arrow keys</strong>: Move by 0.2px (fine adjustment)</li>
+                                    <li><strong>Delete key</strong>: Delete selected element</li>
+                                </ul>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">enableKeyboardControls()</h3>
+                                <p>Enables keyboard controls for element movement and deletion.</p>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">disableKeyboardControls()</h3>
+                                <p>Disables keyboard controls.</p>
+                            </div>
+
+                            <div class="method-signature">
+                                <h3 class="title is-4">setDeletionRules(rules)</h3>
+                                <p>Sets custom deletion rules for the annotator.</p>
+                            </div>
+
+                            <div class="code-highlight">
+                                <pre><code>annotator.setDeletionRules({
+    "bbox": ["keypoint", "polygon", "group"],
+    "keypoint": [],
+    "polygon": ["bbox"]
+});</code></pre>
+                            </div>
+                        </section>
+
+                        <section id="advanced-usage">
+                            <h2 class="title is-3">Advanced Usage Examples</h2>
+                            
+                            <h3 class="title is-4">Custom Event Handling</h3>
+                            <div class="code-highlight">
+                                <pre><code>const annotator = MarkinJS.createImageAnnotator('image');
+
+// Track all annotation changes
+annotator.on('annotationcreated', (data) => {
+    console.log(`Created ${data.class} annotation:`, data.uuid);
+});
+
+annotator.on('delete', (data) => {
+    console.log(`Deleted annotation group:`, data.groupId);
+});
+
+// Real-time coordinate tracking
+annotator.on('elementmoved', (data) => {
+    updateCoordinateDisplay(data.element, data.position);
+});</code></pre>
+                            </div>
+
+                            <h3 class="title is-4">Complex Annotation Creation</h3>
+                            <div class="code-highlight">
+                                <pre><code>// Medical imaging annotation
+const medicalAnnotation = annotator.createAnnotation({
+    class: "lesion",
+    uuid: "lesion_001",
+    bbox: [200, 150, 350, 280],
+    keypoints: [
+        { name: "center", point: [275, 215] },
+        { name: "boundary_north", point: [275, 160] },
+        { name: "boundary_south", point: [275, 270] }
+    ],
+    segmentation: [210, 160, 340, 160, 340, 270, 210, 270],
+    bindElements: true,
+    containRules: ["keypoint", "polygon"],
+    deletionRules: {
+        "bbox": ["keypoint", "polygon"],
+        "keypoint": [],
+        "polygon": ["keypoint"]
+    }
+});</code></pre>
+                            </div>
+                        </section>
+
+                        <!-- Call to Action -->
+                        <section class="section has-background-light">
+                            <div class="container has-text-centered">
+                                <h2 class="title is-3">Ready to Build?</h2>
+                                <p class="subtitle is-5">Explore examples or start building your annotation tool</p>
+                                <div class="buttons is-centered">
+                                    <a href="index.html" class="button is-dark is-large">
+                                        View Examples
+                                    </a>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="content has-text-centered">
+                <p>
+                    <strong>MarkinJS</strong> - A lightweight SVG annotation library for computer vision and machine learning.
+                </p>
+                <div class="buttons is-centered">
+                    <a href="index.html" class="button is-text">Home</a>
+                    <a href="api.html" class="button is-text">API</a>
+                    <a href="https://datamarkin.com" class="button is-text">Datamarkin</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+
+</html>

@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html class="has-navbar-fixed-top" lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>MarkinJS Examples</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="assets/css/bulma.min.css">
+    <link rel="stylesheet" href="assets/css/child.css">
+    <script src="../markin.js"></script>
+
+    <style>
+        .event-log {
+            height: 150px;
+            overflow-y: auto;
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 0.75rem;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+    </style>
+
+</head>
+
+<body>
+    <nav class="navbar is-fixed-top is-white" role="navigation" aria-label="main navigation">
+        <div class="container">
+            <div class="navbar-brand">
+                <a class="navbar-item" href="index.html">
+                    <strong>MarkinJS</strong>
+                </a>
+            </div>
+            <div class="navbar-menu">
+                <div class="navbar-end">
+                    <div class="navbar-item">
+                        <div class="buttons">
+                            <a href="index.html" class="button is-dark">
+                                Home
+                            </a>
+                            <a href="api.html" class="button is-light">
+                                API Documentation
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+        <section class="section">
+            <div class="container">
+                <h1 class="title">MarkinJS Interactive Examples</h1>
+                <h2 class="subtitle">
+                    Explore features with live demonstrations.
+                </h2>
+            </div>
+        </section>
+
+    <section class="section">
+        <div class="container">
+            <div class="columns">
+                <div class="column is-8">
+                    <div class="demo-container">
+                        <div class="demo-image-container">
+                            <img id="demo-image" src="assets/images/image.jpg" alt="Demo Image">
+                        </div>
+                    </div>
+                </div>
+                <div class="column is-4">
+                    <div class="controls-panel">
+                        <h4 class="title is-5">Basic Controls</h4>
+                        <div class="buttons">
+                            <button id="create-bbox" class="button is-dark is-small">Bounding Box</button>
+                            <button id="create-keypoints" class="button is-dark is-small">Keypoints</button>
+                            <button id="create-polygon" class="button is-dark is-small">Polygon</button>
+                            <button id="create-simple-face" class="button is-dark is-small">Face Detection</button>
+                        </div>
+
+                        <h5 class="title is-6">Advanced Controls</h5>
+                        <div class="buttons">
+                            <button id="create-complex" class="button is-dark is-small">Complex Annotation</button>
+                            <button id="create-bound-elements" class="button is-dark is-small">Bound Elements</button>
+                            <button id="create-unbound-elements" class="button is-dark is-small">Unbound Elements</button>
+                            <button id="create-containment-demo" class="button is-dark is-small">Containment Demo</button>
+                        </div>
+
+                        <h5 class="title is-6">Management</h5>
+                        <div class="buttons">
+                            <button id="delete-selected" class="button is-danger is-small">Delete Selected</button>
+                            <button id="clear-all" class="button is-warning is-small">Clear All</button>
+                            <button id="enable-keyboard" class="button is-success is-small">Enable Keyboard</button>
+                            <button id="disable-keyboard" class="button is-light is-small">Disable Keyboard</button>
+                        </div>
+
+                        <h5 class="title is-6">History</h5>
+                        <div class="buttons">
+                            <button id="undo-btn" class="button is-info is-small" disabled>Undo</button>
+                            <button id="redo-btn" class="button is-info is-small" disabled>Redo</button>
+                            <button id="clear-history" class="button is-light is-small">Clear History</button>
+                        </div>
+
+                        <div class="field">
+                            <label class="label is-small" for="zoom-slider">Zoom Level</label>
+                            <div class="control">
+                                <input id="zoom-slider" class="slider is-fullwidth is-small" step="0.1" min="0.5" max="3" value="1" type="range">
+                            </div>
+                            <p class="help">Current: <span id="zoom-display">1.0x</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="container">
+            <div class="box">
+                <h5 class="title is-6">Event Log</h5>
+                <div id="event-log" class="event-log"></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section">
+    <div class="container">
+            <div class="columns">
+                <!-- Main Content -->
+                <div class="column is-12">
+                    <div class="content">
+
+                        <!-- Code Examples -->
+                        <section id="code-examples" class="example-section">
+                            <h2 class="title is-3">Code Examples</h2>
+                            
+                            <div class="columns is-multiline">
+                                <div class="column is-12">
+                                    <div class="box">
+                                        <h3 class="title is-4">Basic Annotation</h3>
+                                        <div class="code-example">
+                                            <pre>const annotator = MarkinJS.createImageAnnotator('my-image');
+
+// Simple bounding box
+annotator.createAnnotation({
+    class: "person",
+    bbox: [100, 100, 300, 400]
+});</pre>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="column is-12">
+                                    <div class="box">
+                                        <h3 class="title is-4">Keypoint Detection</h3>
+                                        <div class="code-example">
+                                            <pre>// Face with keypoints
+annotator.createAnnotation({
+    class: "face",
+    bbox: [100, 80, 200, 180],
+    keypoints: [
+        { name: "left_eye", point: [130, 110] },
+        { name: "right_eye", point: [170, 110] },
+        { name: "nose", point: [150, 130] }
+    ]
+});</pre>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="column is-12">
+                                    <div class="box">
+                                        <h3 class="title is-4">Bound Elements</h3>
+                                        <div class="code-example">
+                                            <pre>// Elements that move together
+annotator.createAnnotation({
+    class: "person",
+    bbox: [150, 100, 300, 250],
+    keypoints: [{ name: "head", point: [225, 130] }],
+    bindElements: true,
+    containRules: ["keypoint"]
+});</pre>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="column is-12">
+                                    <div class="box">
+                                        <h3 class="title is-4">Event Handling</h3>
+                                        <div class="code-example">
+                                            <pre>// Listen for interactions
+annotator.on('select', (data) => {
+    console.log('Selected:', data.type);
+});
+
+annotator.on('elementmoved', (data) => {
+    console.log('Moved:', data.deltaX, data.deltaY);
+});</pre>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="column is-12">
+                                    <div class="box">
+                                        <h3 class="title is-4">Keyboard Shortcuts</h3>
+                                        <div class="content">
+                                            <div class="columns">
+                                                <div class="column is-6">
+                                                    <ul>
+                                                        <li><strong>Arrow Keys:</strong> Move by 1 pixel</li>
+                                                        <li><strong>Shift + Arrow Keys:</strong> Move by 10 pixels</li>
+                                                        <li><strong>Ctrl + Arrow Keys:</strong> Move by 0.2 pixels</li>
+                                                    </ul>
+                                                </div>
+                                                <div class="column is-6">
+                                                    <ul>
+                                                        <li><strong>Delete Key:</strong> Remove annotation</li>
+                                                        <li><strong>Ctrl + Z:</strong> Undo</li>
+                                                        <li><strong>Ctrl + Shift + Z:</strong> Redo</li>
+                                                    </ul>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- Call to Action -->
+                        <section class="section">
+                            <div class="container has-text-centered">
+                                <h2 class="title is-3">Ready to Build Your Own Tool?</h2>
+                                <p class="subtitle is-5">Start with our comprehensive API documentation</p>
+                                <div class="buttons is-centered">
+                                    <a href="api.html" class="button is-dark">
+                                        View API Documentation
+                                    </a>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
+    </div>
+        </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="content has-text-centered">
+                <p>
+                    <strong>MarkinJS</strong> - A lightweight SVG annotation library for computer vision and machine learning.
+                </p>
+                <div class="buttons is-centered">
+                    <a href="index.html" class="button is-text">Examples</a>
+                    <a href="api.html" class="button is-text">API</a>
+                    <a href="https://datamarkin.com" class="button is-text">Datamarkin</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script defer>
+        let annotator = null;
+        let currentZoom = 1.0;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeDemo();
+            setupEventListeners();
+            setupTabs();
+        });
+
+        function initializeDemo() {
+            // Initialize MarkinJS annotator
+            annotator = MarkinJS.createImageAnnotator('demo-image', {
+                keyboardControls: true,
+                zoom: 1.0,
+                requireSelectionToDrag: true
+            });
+
+            if (annotator) {
+                // Setup annotator events
+                setupAnnotatorEvents();
+                logEvent('🚀 MarkinJS demo initialized successfully');
+                
+                // Create initial demo annotations
+                createInitialAnnotations();
+                
+                // Initialize history button states
+                setTimeout(() => updateHistoryButtons(), 100);
+            } else {
+                logEvent('❌ Failed to initialize MarkinJS annotator');
+            }
+        }
+
+        function setupAnnotatorEvents() {
+            annotator.on('select', (data) => {
+                logEvent(`✅ Selected: ${data.type} (${data.data?.class || 'no class'})`);
+            });
+
+            annotator.on('deselect', () => {
+                logEvent('❌ Deselected element');
+            });
+
+            annotator.on('annotationcreated', (data) => {
+                logEvent(`✨ Created: ${data.class || 'unnamed'} annotation`);
+                updateHistoryButtons(); // Update history buttons when new annotations are created
+            });
+
+            annotator.on('delete', (data) => {
+                logEvent(`🗑️ Deleted: ${data.role} element`);
+                updateHistoryButtons(); // Update history buttons when elements are deleted
+            });
+
+            annotator.on('elementmoved', (data) => {
+                const dx = Math.round(data.deltaX * 10) / 10;
+                const dy = Math.round(data.deltaY * 10) / 10;
+                if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                    logEvent(`📍 Moved: ${data.type} by (${dx}, ${dy})`);
+                }
+            });
+
+            // Listen for annotation modifications to update history buttons
+            annotator.on('annotationmodificationcomplete', () => {
+                updateHistoryButtons();
+            });
+        }
+
+        function setupEventListeners() {
+            // Basic controls
+            document.getElementById('create-bbox').addEventListener('click', createDemoBbox);
+            document.getElementById('create-keypoints').addEventListener('click', createDemoKeypoints);
+            document.getElementById('create-polygon').addEventListener('click', createDemoPolygon);
+            document.getElementById('create-simple-face').addEventListener('click', createSimpleFace);
+            
+            // Advanced controls
+            document.getElementById('create-complex').addEventListener('click', createDemoComplex);
+            document.getElementById('create-bound-elements').addEventListener('click', createBoundElements);
+            document.getElementById('create-unbound-elements').addEventListener('click', createUnboundElements);
+            document.getElementById('create-containment-demo').addEventListener('click', createContainmentDemo);
+            
+            // Management controls
+            document.getElementById('delete-selected').addEventListener('click', () => {
+                annotator.deleteSelectedElement();
+            });
+            document.getElementById('clear-all').addEventListener('click', clearAllAnnotations);
+
+            // Zoom control
+            document.getElementById('zoom-slider').addEventListener('input', (e) => {
+                const zoom = parseFloat(e.target.value);
+                currentZoom = zoom;
+                annotator.setZoom(zoom);
+                updateZoomDisplay();
+            });
+
+            // Keyboard controls
+            document.getElementById('enable-keyboard').addEventListener('click', () => {
+                annotator.enableKeyboardControls();
+                logEvent('⌨️ Keyboard controls enabled');
+            });
+
+            document.getElementById('disable-keyboard').addEventListener('click', () => {
+                annotator.disableKeyboardControls();
+                logEvent('⌨️ Keyboard controls disabled');
+            });
+
+            // History controls
+            document.getElementById('undo-btn').addEventListener('click', () => {
+                if (annotator.undo()) {
+                    logEvent('↩️ Undo performed');
+                    updateHistoryButtons();
+                } else {
+                    logEvent('❌ Nothing to undo');
+                }
+            });
+
+            document.getElementById('redo-btn').addEventListener('click', () => {
+                if (annotator.redo()) {
+                    logEvent('↪️ Redo performed');
+                    updateHistoryButtons();
+                } else {
+                    logEvent('❌ Nothing to redo');
+                }
+            });
+
+            document.getElementById('clear-history').addEventListener('click', () => {
+                if (confirm('Clear undo/redo history? This cannot be undone.')) {
+                    annotator.clearHistory();
+                    logEvent('🧹 History cleared');
+                    updateHistoryButtons();
+                }
+            });
+
+        }
+
+        function setupTabs() {
+            // Tab functionality removed as we no longer use tabs in this simplified version
+        }
+
+        function createInitialAnnotations() {
+            // Create a bounding box annotation
+            annotator.createAnnotation({
+                bbox: [120, 80, 250, 180],
+                class: "person",
+                fill: 'rgba(79, 70, 229, 0.2)',
+                stroke: '#4f46e5'
+            });
+
+            // Create keypoints annotation with face detection
+            annotator.createAnnotation({
+                bbox: [300, 100, 420, 200],
+                class: "face",
+                keypoints: [
+                    { name: "left_eye", point: [330, 130] },
+                    { name: "right_eye", point: [390, 130] },
+                    { name: "nose", point: [360, 150] },
+                    { name: "mouth", point: [360, 175] }
+                ],
+                fill: 'rgba(34, 197, 94, 0.2)',
+                stroke: '#22c55e'
+            });
+
+            // Create segmentation annotation
+            annotator.createAnnotation({
+                bbox: [150, 220, 270, 320],
+                class: "object",
+                segmentation: [
+                    170, 240,
+                    250, 240,
+                    260, 260,
+                    250, 300,
+                    170, 300,
+                    160, 260
+                ],
+                fill: 'rgba(239, 68, 68, 0.2)',
+                stroke: '#ef4444'
+            });
+
+            logEvent('📋 Initial demo annotations created');
+        }
+
+        // Demo creation functions
+        function createDemoBbox() {
+            const x = Math.random() * 200 + 50;
+            const y = Math.random() * 150 + 50;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 120, y + 80],
+                class: "demo-bbox",
+                fill: 'rgba(79, 70, 229, 0.2)',
+                stroke: '#4f46e5'
+            });
+        }
+
+        function createDemoKeypoints() {
+            const x = Math.random() * 200 + 200;
+            const y = Math.random() * 150 + 100;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 100, y + 80],
+                class: "demo-keypoints",
+                keypoints: [
+                    { name: "point1", point: [x + 25, y + 30] },
+                    { name: "point2", point: [x + 50, y + 40] },
+                    { name: "point3", point: [x + 75, y + 50] }
+                ],
+                fill: 'rgba(16, 185, 129, 0.2)',
+                stroke: '#10b981'
+            });
+        }
+
+        function createDemoPolygon() {
+            const cx = Math.random() * 200 + 300;
+            const cy = Math.random() * 150 + 150;
+            annotator.createAnnotation({
+                bbox: [cx - 60, cy - 40, cx + 60, cy + 40],
+                class: "demo-polygon",
+                segmentation: [
+                    cx - 50, cy - 30,
+                    cx + 50, cy - 30,
+                    cx + 40, cy + 30,
+                    cx - 40, cy + 30
+                ],
+                fill: 'rgba(239, 68, 68, 0.2)',
+                stroke: '#ef4444'
+            });
+        }
+
+        function createDemoComplex() {
+            const x = Math.random() * 150 + 250;
+            const y = Math.random() * 100 + 200;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 120, y + 80],
+                class: "complex-demo",
+                segmentation: [x + 20, y + 20, x + 100, y + 20, x + 100, y + 60, x + 20, y + 60],
+                keypoints: [
+                    { name: "center", point: [x + 60, y + 40] },
+                    { name: "corner", point: [x + 100, y + 60] }
+                ],
+                bindElements: true,
+                containRules: ["keypoint", "polygon"],
+                fill: 'rgba(124, 58, 237, 0.2)',
+                stroke: '#7c3aed'
+            });
+        }
+
+        function clearAllAnnotations() {
+            if (confirm('Clear all annotations? This cannot be undone.')) {
+                const svg = annotator.getSVGElement();
+                const groups = svg.querySelectorAll('g[data-annotation-group]');
+                groups.forEach(group => group.remove());
+                logEvent('🧹 All annotations cleared');
+            }
+        }
+
+        // New demo functions for categorized controls
+        function createSimpleFace() {
+            const x = Math.random() * 200 + 100;
+            const y = Math.random() * 150 + 80;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 100, y + 120],
+                class: "face",
+                keypoints: [
+                    { name: "left_eye", point: [x + 25, y + 35] },
+                    { name: "right_eye", point: [x + 75, y + 35] },
+                    { name: "nose", point: [x + 50, y + 60] },
+                    { name: "mouth", point: [x + 50, y + 85] }
+                ],
+                fill: 'rgba(34, 197, 94, 0.2)',
+                stroke: '#22c55e'
+            });
+            logEvent('👤 Face detection annotation created');
+        }
+
+        function createBoundElements() {
+            const x = Math.random() * 200 + 150;
+            const y = Math.random() * 150 + 100;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 120, y + 100],
+                class: "bound-example",
+                keypoints: [
+                    { name: "center", point: [x + 60, y + 50] },
+                    { name: "marker", point: [x + 90, y + 30] }
+                ],
+                segmentation: [x + 20, y + 20, x + 100, y + 20, x + 100, y + 80, x + 20, y + 80],
+                bindElements: true,
+                containRules: ["keypoint", "polygon"],
+                fill: 'rgba(59, 130, 246, 0.2)',
+                stroke: '#3b82f6'
+            });
+            logEvent('🔗 Bound elements annotation created - elements move together');
+        }
+
+        function createUnboundElements() {
+            const x = Math.random() * 200 + 250;
+            const y = Math.random() * 150 + 150;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 100, y + 80],
+                class: "unbound-example",
+                keypoints: [
+                    { name: "free1", point: [x + 30, y + 30] },
+                    { name: "free2", point: [x + 70, y + 50] }
+                ],
+                bindElements: false,
+                fill: 'rgba(168, 85, 247, 0.2)',
+                stroke: '#a855f7'
+            });
+            logEvent('🔓 Unbound elements annotation created - elements move independently');
+        }
+
+        function createContainmentDemo() {
+            const x = Math.random() * 150 + 200;
+            const y = Math.random() * 100 + 200;
+            annotator.createAnnotation({
+                bbox: [x, y, x + 140, y + 100],
+                class: "containment-demo",
+                segmentation: [x + 20, y + 20, x + 120, y + 20, x + 120, y + 80, x + 20, y + 80],
+                keypoints: [
+                    { name: "contained1", point: [x + 40, y + 40] },
+                    { name: "contained2", point: [x + 100, y + 60] }
+                ],
+                bindElements: true,
+                containRules: ["polygon", "keypoint"],
+                fill: 'rgba(251, 146, 60, 0.2)',
+                stroke: '#fb923c'
+            });
+            logEvent('📦 Containment demo created - try moving elements outside the bounding box');
+        }
+
+
+        // Utility functions
+        function updateZoomDisplay() {
+            document.getElementById('zoom-display').textContent = currentZoom.toFixed(1) + 'x';
+        }
+
+        function updateHistoryButtons() {
+            if (annotator && annotator.history) {
+                const undoBtn = document.getElementById('undo-btn');
+                const redoBtn = document.getElementById('redo-btn');
+                
+                // Enable/disable undo button based on history availability
+                undoBtn.disabled = !annotator.history.hasUndo();
+                if (undoBtn.disabled) {
+                    undoBtn.classList.add('is-light');
+                    undoBtn.classList.remove('is-info');
+                } else {
+                    undoBtn.classList.remove('is-light');
+                    undoBtn.classList.add('is-info');
+                }
+                
+                // Enable/disable redo button based on history availability
+                redoBtn.disabled = !annotator.history.hasRedo();
+                if (redoBtn.disabled) {
+                    redoBtn.classList.add('is-light');
+                    redoBtn.classList.remove('is-info');
+                } else {
+                    redoBtn.classList.remove('is-light');
+                    redoBtn.classList.add('is-info');
+                }
+            }
+        }
+
+        function logEvent(message) {
+            const log = document.getElementById('event-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.textContent = `${timestamp}: ${message}`;
+            entry.style.marginBottom = '2px';
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+
+            // Keep only the most recent 50 entries
+            while (log.children.length > 50) {
+                log.removeChild(log.firstChild);
+            }
+        }
+
+        // Removed menu navigation as we simplified the layout
+    </script>
+</body>
+
+</html>
