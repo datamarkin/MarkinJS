@@ -70,7 +70,7 @@ Thumbs.db
 tmp/
 
 # Build output
-dist/*.min.js
+dist/
 build/
 
 # Test output
