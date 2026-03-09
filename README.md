@@ -2,9 +2,12 @@
 
 A lightweight, zero-dependency SVG annotation library for computer vision and image labeling projects.
 
-![Version](https://img.shields.io/badge/version-0.0.1-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![No Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)
+[![npm version](https://img.shields.io/npm/v/markinjs.svg)](https://www.npmjs.com/package/markinjs)
+[![npm downloads](https://img.shields.io/npm/dm/markinjs.svg)](https://www.npmjs.com/package/markinjs)
+[![GitHub stars](https://img.shields.io/github/stars/datamarkin/markinjs.svg)](https://github.com/datamarkin/markinjs)
+[![License](https://img.shields.io/npm/l/markinjs.svg)](https://github.com/datamarkin/markinjs/blob/main/LICENSE)
+[![Bundle Size](https://img.shields.io/badge/bundle%20size-~49KB%20min-brightgreen.svg)](https://www.npmjs.com/package/markinjs)
+[![No Dependencies](https://img.shields.io/badge/dependencies-none-brightgreen.svg)](https://www.npmjs.com/package/markinjs)
 
 ---
 
@@ -14,28 +17,54 @@ MarkinJS enables developers to create precise, pixel-perfect annotations on imag
 
 **Perfect for:**
 - Computer vision datasets
-- Image labeling workflows  
+- Image labeling workflows
 - Data annotation platforms
 - ML training data preparation
 - Research and prototyping
 
 ## Demo
 
-🚀 **[Live Demo](./examples/index.html)** - See MarkinJS in action with interactive examples
+[Live Demo](https://markinjs.com) - See MarkinJS in action with interactive examples
 
-📚 **[More Examples](./examples/)** - Object detection, medical imaging, and advanced use cases
+[More Examples](./examples/) - Object detection, medical imaging, and advanced use cases
 
-## Quick Start
+## Installation
 
-### Installation
+### npm
 
-No build process required. Simply include the script:
-
-```html
-<script src="markin.js"></script>
+```bash
+npm install markinjs
 ```
 
-### Basic Usage
+### CDN
+
+```html
+<!-- Latest version -->
+<script src="https://unpkg.com/markinjs/dist/markin.min.js"></script>
+
+<!-- Or via jsDelivr -->
+<script src="https://cdn.jsdelivr.net/npm/markinjs/dist/markin.min.js"></script>
+```
+
+### ES Module
+
+```javascript
+import MarkinJS from 'markinjs';
+```
+
+### CommonJS
+
+```javascript
+const MarkinJS = require('markinjs');
+```
+
+### Script Tag
+
+```html
+<script src="dist/markin.min.js"></script>
+```
+
+## Quick Start
 
 ```javascript
 // Create annotator on an existing image
@@ -54,29 +83,35 @@ annotator.createAnnotation({
 annotator.on('select', (data) => {
     console.log('Selected:', data.element);
 });
+
+// Clean up when done
+annotator.destroy();
 ```
 
 ## Core Features
 
-### 📦 Annotation Types
+### Annotation Types
 - **Bounding Boxes** - Rectangular regions with resize handles
 - **Polygons** - Precise outlines with draggable vertices
 - **Keypoints** - Point markers for specific features
 - **Groups** - Hierarchical element relationships
 
-### 🎯 Advanced Capabilities
+### Advanced Capabilities
 - **Element Binding** - Child elements move with parents
-- **Containment Rules** - Keep elements within boundaries  
+- **Containment Rules** - Keep elements within boundaries
 - **Custom Deletion Rules** - Configure cascade deletion behavior
 - **Keyboard Controls** - Precise movement (1px, 10px, 0.2px)
 - **Event System** - Rich interaction events for custom UI
 - **Zoom Support** - Works at any zoom level
+- **Undo/Redo** - Built-in history management
 
-### ⚡ Technical Highlights
+### Technical Highlights
 - Zero dependencies
+- ~49KB minified
+- TypeScript declarations included
+- ESM, CJS, and IIFE builds
 - Modern browser support
 - Pixel-perfect precision
-- Memory efficient
 - Framework agnostic
 
 ## API Reference
@@ -107,9 +142,12 @@ Uses an existing SVG element for annotations.
 | `getSelectedElement()` | Get currently selected element |
 | `deleteSelectedElement()` | Delete selected element |
 | `enable()` / `disable()` | Toggle annotator state |
+| `destroy()` | Fully destroy the annotator and clean up all resources |
 | `setZoom(level)` | Set zoom level |
 | `on(event, callback)` | Add event listener |
 | `off(event, callback)` | Remove event listener |
+| `saveState()` | Save current state for undo |
+| `undo()` / `redo()` | Undo/redo operations |
 
 ### Annotation Options
 
@@ -164,14 +202,8 @@ annotator.createAnnotation({
 });
 
 // Export annotations
-annotator.on('annotationcreated', (data) => {
-    saveToDataset({
-        id: data.uuid,
-        class: data.class,
-        bbox: getBBoxCoordinates(data.group),
-        keypoints: getKeypointCoordinates(data.group)
-    });
-});
+const annotations = annotator.exportAllAnnotations();
+console.log(JSON.stringify(annotations));
 ```
 
 ### Medical Imaging
@@ -187,7 +219,7 @@ const annotator = MarkinJS.createImageAnnotator('medical-scan', {
 
 // Add anatomical region
 annotator.createAnnotation({
-    class: "lesion", 
+    class: "lesion",
     bbox: [200, 150, 280, 220],
     keypoints: [
         { name: "center", point: [240, 185] },
@@ -203,7 +235,7 @@ const annotator = MarkinJS.createImageAnnotator('labeling-canvas');
 
 // Real-time coordinate display
 annotator.on('elementmoved', (data) => {
-    document.getElementById('coordinates').textContent = 
+    document.getElementById('coordinates').textContent =
         `Position: (${Math.round(data.position.x)}, ${Math.round(data.position.y)})`;
 });
 
@@ -227,26 +259,26 @@ annotator.on('select', (data) => {
 | `requireBbox` | Boolean | false | Require bbox for all annotations |
 | `bboxContainPolygon` | Boolean | true | Keep polygons inside bbox |
 | `bboxContainKeypoints` | Boolean | true | Keep keypoints inside bbox |
+| `historyEnabled` | Boolean | true | Enable undo/redo history |
+| `historyMaxStates` | Number | 50 | Maximum number of undo states |
+| `requireSelectionToDrag` | Boolean | true | Require selection before dragging |
 | `deletionRules` | Object | See docs | Default deletion behavior |
 
 ## Browser Support
 
-- All modern browsers
-
-## Roadmap
-
-- **v1.0.0**: Stable API, comprehensive testing
-- **Future**: TypeScript definitions, React/Vue components, performance optimizations
+- All modern browsers (Chrome, Firefox, Safari, Edge)
 
 ## Contributing
 
 MarkinJS is currently in active development. We welcome feedback and bug reports!
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
+
 ## Support
 
-- 📧 **Contact**: markinjs@datamarkin.com
-- 🌐 **Website**: https://datamarkin.com  
-- 📝 **Issues**: Use GitHub issues for bug reports
+- **Website**: [markinjs.com](https://markinjs.com)
+- **Issues**: [GitHub Issues](https://github.com/datamarkin/markinjs/issues)
+- **Contact**: markinjs@datamarkin.com
 
 ## License
 
@@ -255,5 +287,3 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ---
 
 **Maintained by [Datamarkin](https://datamarkin.com)**
-
-> ⚠️ **Note**: Version 0.0.1 is unstable. Breaking changes expected before v1.0.0.
