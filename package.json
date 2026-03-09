@@ -1,16 +1,33 @@
 {
   "name": "markinjs",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A lightweight, zero-dependency SVG annotation library for computer vision and image labeling projects",
-  "main": "markin.js",
+  "main": "dist/markin.cjs.js",
+  "module": "dist/markin.esm.js",
+  "browser": "dist/markin.js",
+  "types": "dist/markin.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/markin.d.ts",
+      "browser": "./dist/markin.js",
+      "import": "./dist/markin.esm.js",
+      "require": "./dist/markin.cjs.js",
+      "default": "./dist/markin.js"
+    }
+  },
   "files": [
-    "markin.js",
+    "dist/",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "build": "echo 'Build script not yet implemented'",
-    "test": "echo 'Tests not yet implemented'",
+    "build": "rollup -c",
+    "build:watch": "rollup -c --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint markin.js",
+    "lint:fix": "eslint markin.js --fix",
+    "format": "prettier --write markin.js",
     "example": "echo 'Open examples/index.html in your browser'",
     "dev": "echo 'Open examples/index.html in your browser for development'"
   },
@@ -35,7 +52,7 @@
   "bugs": {
     "url": "https://github.com/datamarkin/markinjs/issues"
   },
-  "homepage": "https://github.com/datamarkin/markinjs#readme",
+  "homepage": "https://markinjs.com",
   "engines": {
     "node": ">=12.0.0"
   },
@@ -43,5 +60,16 @@
     "> 1%",
     "last 2 versions",
     "not dead"
-  ]
+  ],
+  "devDependencies": {
+    "@rollup/plugin-terser": "^0.4.4",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "globals": "^16.0.0",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.0.0",
+    "rollup": "^4.9.0",
+    "vitest": "^3.0.0"
+  }
 }
