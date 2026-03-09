@@ -2,7 +2,7 @@
 // Main namespace and module pattern
 const MarkinJS = (function() {
     // Private variables and constants
-    const VERSION = "0.0.1";
+    const VERSION = "0.1.0";
     
     // Utility functions
     const utils = {
@@ -16,7 +16,9 @@ const MarkinJS = (function() {
             const pt = svg.createSVGPoint();
             pt.x = clientX;
             pt.y = clientY;
-            return pt.matrixTransform(svg.getScreenCTM().inverse());
+            const ctm = svg.getScreenCTM();
+            if (!ctm) return pt;
+            return pt.matrixTransform(ctm.inverse());
         },
         
         clientToSVGDelta(svg, clientDeltaX, clientDeltaY) {
@@ -509,8 +511,6 @@ const MarkinJS = (function() {
             // Initialize events
             this.initEvents();
             
-            // Log initialization
-            console.log(`SVG Annotator initialized for ${svgId} with ${this.options.keyboardControls ? 'keyboard controls enabled' : 'keyboard controls disabled'}`);
         }
         
         // Initialize events
@@ -650,8 +650,6 @@ const MarkinJS = (function() {
                     startSVGY: svgPoint.y,
                     originalData: this.getElementData(element)
                 };
-                
-                console.log(`Starting direct drag of ${element.tagName.toLowerCase()}`);
                 
                 // Emit dragstart event
                 this.events.emit('dragstart', {
@@ -1045,7 +1043,7 @@ const MarkinJS = (function() {
                 
                 if (elementId) {
                     // 1. Handle elements bound TO this element (elements that depend on this one)
-                    const boundElements = this.svg.querySelectorAll(`[data-bound-to="${elementId}"]`);
+                    const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(elementId)}"]`);
                     
                     if (deletionMode === 'delete') {
                         // Delete bound elements
@@ -1073,7 +1071,7 @@ const MarkinJS = (function() {
                 // This implements the reverse relationship for deletion rules
                 if (element.hasAttribute('data-bound-to')) {
                     const boundToId = element.getAttribute('data-bound-to');
-                    const boundToElement = this.svg.querySelector(`#${boundToId}`);
+                    const boundToElement = this.svg.querySelector(`#${CSS.escape(boundToId)}`);
                     
                     if (boundToElement && rulesToApply.length > 0) {
                         const boundToRole = utils.getElementRole(boundToElement);
@@ -1182,7 +1180,7 @@ const MarkinJS = (function() {
                 const elementId = element.getAttribute('id');
                 if (elementId) {
                     // Find elements that are bound to this element
-                    const boundElements = this.svg.querySelectorAll(`[data-bound-to="${elementId}"]`);
+                    const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(elementId)}"]`);
                     
                     // Either delete bound elements or unbind them
                     boundElements.forEach(boundElement => {
@@ -1262,6 +1260,48 @@ const MarkinJS = (function() {
         
         // Create a new annotation
         createAnnotation(options = {}) {
+            // Validate input
+            if (options.bbox) {
+                if (!Array.isArray(options.bbox) || options.bbox.length !== 4) {
+                    console.error('Invalid bbox: must be an array of 4 numbers [x1, y1, x2, y2]');
+                    return null;
+                }
+                if (options.bbox.some(v => typeof v !== 'number' || isNaN(v))) {
+                    console.error('Invalid bbox: all values must be valid numbers');
+                    return null;
+                }
+            }
+            if (options.keypoints) {
+                if (!Array.isArray(options.keypoints)) {
+                    console.error('Invalid keypoints: must be an array');
+                    return null;
+                }
+                for (const kp of options.keypoints) {
+                    if (!kp.point || !Array.isArray(kp.point) || kp.point.length !== 2) {
+                        console.error('Invalid keypoint: each keypoint must have a point array of [x, y]');
+                        return null;
+                    }
+                    if (kp.point.some(v => typeof v !== 'number' || isNaN(v))) {
+                        console.error('Invalid keypoint: point values must be valid numbers');
+                        return null;
+                    }
+                }
+            }
+            if (options.segmentation) {
+                if (!Array.isArray(options.segmentation)) {
+                    console.error('Invalid segmentation: must be a flat array of numbers');
+                    return null;
+                }
+                if (options.segmentation.length < 6 || options.segmentation.length % 2 !== 0) {
+                    console.error('Invalid segmentation: must have at least 6 values (3 points) and an even number of values');
+                    return null;
+                }
+                if (options.segmentation.some(v => typeof v !== 'number' || isNaN(v))) {
+                    console.error('Invalid segmentation: all values must be valid numbers');
+                    return null;
+                }
+            }
+
             // Default options
             const defaults = {
                 uuid: utils.generateUUID(),
@@ -1480,7 +1520,40 @@ const MarkinJS = (function() {
             this.enabled = false;
             this.events.emit('disabled', { message: 'Annotator disabled' });
         }
-        
+
+        // Fully destroy the annotator, cleaning up all DOM changes and listeners
+        destroy() {
+            // Disable first to remove event listeners
+            if (this.enabled) {
+                this.disable();
+            } else {
+                // Ensure all listeners are removed even if already disabled
+                this.svg.removeEventListener('mousemove', this.boundHandleMouseMove);
+                this.svg.removeEventListener('click', this.boundHandleClick);
+                document.removeEventListener('mousemove', this.boundHandleGlobalMouseMove);
+                document.removeEventListener('mouseup', this.boundHandleGlobalMouseUp);
+                document.removeEventListener('keydown', this.boundHandleKeyDown);
+            }
+
+            // Clear handles
+            this.handleManager.clearHandles();
+
+            // Clear history
+            if (this.history) {
+                this.history.undoStack = [];
+                this.history.redoStack = [];
+                this.history = null;
+            }
+
+            // Clear event listeners
+            this.events.listeners = {};
+
+            // Clear UUID registry
+            this.uuidRegistry = {};
+
+            this.events.emit('destroyed', { message: 'Annotator destroyed' });
+        }
+
         // Update zoom level
         setZoom(zoom) {
             if (typeof zoom !== 'number' || zoom <= 0) {
@@ -1818,11 +1891,11 @@ const MarkinJS = (function() {
             if (!targetId) return;
             
             // Find all elements bound to this element
-            const boundElements = this.svg.querySelectorAll(`[data-bound-to="${targetId}"]`);
-            
+            const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(targetId)}"]`);
+
             boundElements.forEach(element => {
                 const tagName = element.tagName.toLowerCase();
-                
+
                 if (tagName === 'circle') {
                     const cx = parseFloat(element.getAttribute('cx'));
                     const cy = parseFloat(element.getAttribute('cy'));
@@ -1876,11 +1949,14 @@ const MarkinJS = (function() {
             } = resizeInfo;
             
             // Find all elements bound to this element
-            const boundElements = this.svg.querySelectorAll(`[data-bound-to="${targetId}"]`);
-            
+            const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(targetId)}"]`);
+
+            // Guard against zero-size originals to avoid division by zero
+            if (originalWidth === 0 || originalHeight === 0) return;
+
             boundElements.forEach(element => {
                 const tagName = element.tagName.toLowerCase();
-                
+
                 if (tagName === 'circle') {
                     // Calculate relative position in the original rectangle (0-1 range)
                     const cx = parseFloat(element.getAttribute('cx'));
@@ -2093,7 +2169,6 @@ const MarkinJS = (function() {
             if (!this.options.keyboardControls) {
                 this.options.keyboardControls = true;
                 document.addEventListener('keydown', this.boundHandleKeyDown);
-                console.log('Keyboard controls enabled');
                 this.events.emit('keyboardcontrolsenabled', {});
             }
         }
@@ -2129,7 +2204,6 @@ const MarkinJS = (function() {
             if (this.options.keyboardControls) {
                 this.options.keyboardControls = false;
                 document.removeEventListener('keydown', this.boundHandleKeyDown);
-                console.log('Keyboard controls disabled');
                 this.events.emit('keyboardcontrolsdisabled', {});
             }
         }
@@ -2213,16 +2287,15 @@ const MarkinJS = (function() {
                 });
             }
             
-            // Include any custom attributes from the group
-            const customAttrList = group.getAttributeNames();
+            // Include custom data-* attributes from the group (safe prefix only)
+            const internalAttrs = ['data-uuid', 'data-class', 'data-annotation-group', 'data-deletion-rules', 'data-selected', 'data-bound-to', 'data-contain', 'data-base-stroke-width', 'data-base-radius', 'data-handle-type', 'data-ignore-containment'];
+            const customAttrList = group.getAttributeNames().filter(attrName =>
+                attrName.startsWith('data-') && !internalAttrs.includes(attrName)
+            );
             if (customAttrList.length > 0) {
                 annotation.attributes = {};
-                
                 customAttrList.forEach(attrName => {
-                    // Skip standard attributes we've already processed
-                    if (!['data-uuid', 'data-class', 'data-annotation-group'].includes(attrName)) {
-                        annotation.attributes[attrName] = group.getAttribute(attrName);
-                    }
+                    annotation.attributes[attrName] = group.getAttribute(attrName);
                 });
             }
             
@@ -2682,7 +2755,7 @@ const MarkinJS = (function() {
                 
                 // If not found by ID, look for elements with that ID inside annotation groups
                 if (!existingGroup) {
-                    const el = this.svg.querySelector(`#${options.id}`);
+                    const el = this.svg.querySelector(`#${CSS.escape(options.id)}`);
                     if (el) {
                         existingGroup = el.closest('g[data-annotation-group="true"]');
                     }
@@ -2937,8 +3010,6 @@ const MarkinJS = (function() {
                     originalData: this.annotator.getElementData(targetElement)
                 };
                 
-                console.log(`Starting drag of ${handleType} handle for ${targetElement.tagName.toLowerCase()}`);
-                
                 // Emit dragstart event
                 this.annotator.events.emit('dragstart', {
                     element: targetElement,
@@ -3135,6 +3206,94 @@ const MarkinJS = (function() {
         }
     }
     
+    // History Manager for Undo/Redo functionality
+    class HistoryManager {
+        constructor(annotator, maxStates = 50) {
+            this.annotator = annotator;
+            this.maxStates = maxStates;
+            this.undoStack = [];
+            this.redoStack = [];
+        }
+
+        saveState(action = 'unknown') {
+            // Clear redo stack when a new action is performed
+            this.redoStack = [];
+
+            // Get current SVG state
+            const state = this.annotator.svg.cloneNode(true);
+
+            // Add to undo stack
+            this.undoStack.push({
+                state,
+                action,
+                timestamp: Date.now()
+            });
+
+            // Limit stack size
+            if (this.undoStack.length > this.maxStates) {
+                this.undoStack.shift();
+            }
+        }
+
+        undo() {
+            if (this.undoStack.length <= 1) return false;
+
+            // Move current state to redo stack
+            const currentState = this.undoStack.pop();
+            this.redoStack.push(currentState);
+
+            // Apply the previous state
+            const prevState = this.undoStack[this.undoStack.length - 1];
+            this.applyState(prevState.state);
+            return true;
+        }
+
+        redo() {
+            if (this.redoStack.length === 0) return false;
+
+            // Get next state from redo stack
+            const nextState = this.redoStack.pop();
+            this.undoStack.push(nextState);
+
+            // Apply the state
+            this.applyState(nextState.state);
+            return true;
+        }
+
+        applyState(savedSvg) {
+            // Temporarily disable events while applying state
+            const wasEnabled = this.annotator.enabled;
+            this.annotator.disable();
+
+            // Replace the current SVG with the saved state
+            const parent = this.annotator.svg.parentNode;
+            if (!parent) return;
+            parent.replaceChild(savedSvg, this.annotator.svg);
+            this.annotator.svg = savedSvg;
+
+            // Re-initialize references and event handlers
+            this.annotator.refreshReferences();
+
+            // Re-enable if it was enabled before
+            if (wasEnabled) this.annotator.enable();
+        }
+
+        hasUndo() {
+            return this.undoStack.length > 1;
+        }
+
+        hasRedo() {
+            return this.redoStack.length > 0;
+        }
+
+        clearHistory() {
+            this.undoStack = [];
+            this.redoStack = [];
+            // Save the current state as the initial state
+            this.saveState('initial');
+        }
+    }
+
     // Return public API
     return {
         version: VERSION,
@@ -3197,10 +3356,15 @@ const MarkinJS = (function() {
                 // SVG-specific method (equivalent to getSVGElement in ImageAnnotator)
                 getSVGElement: function() {
                     return annotator.svg;
+                },
+
+                // Destroy the annotator and clean up all resources
+                destroy: function() {
+                    annotator.destroy();
                 }
             };
         },
-        
+
         // Create an annotator that overlays an image
         createImageAnnotator: function(imageId, options = {}) {
             // Find the image element
@@ -3224,7 +3388,7 @@ const MarkinJS = (function() {
             container.style.lineHeight = '0'; // Prevent extra space under the image
             
             // Generate a unique ID for the SVG element
-            const svgId = `viva-svg-${imageId}`;
+            const svgId = `markin-svg-${imageId}`;
             
             // Wrap the image with the container
             parent.insertBefore(container, image);
@@ -3338,97 +3502,29 @@ const MarkinJS = (function() {
                 updateDimensions: updateSVGDimensions,
                 getContainerElement: function() {
                     return container;
+                },
+
+                // Destroy the annotator and clean up all resources
+                destroy: function() {
+                    // Remove window resize listener
+                    window.removeEventListener('resize', updateSVGDimensions);
+
+                    // Remove image load listener
+                    image.removeEventListener('load', updateSVGDimensions);
+
+                    // Destroy the annotator
+                    annotator.destroy();
+
+                    // Unwrap the image from the container
+                    if (container.parentNode) {
+                        container.parentNode.insertBefore(image, container);
+                        container.parentNode.removeChild(container);
+                    }
                 }
             };
         }
     };
 })();
 
-console.log("MarkinJS loaded");
-
-// History Manager for Undo/Redo functionality
-class HistoryManager {
-    constructor(annotator, maxStates = 50) {
-        this.annotator = annotator;
-        this.maxStates = maxStates;
-        this.undoStack = [];
-        this.redoStack = [];
-    }
-    
-    saveState(action = 'unknown') {
-        // Clear redo stack when a new action is performed
-        this.redoStack = [];
-        
-        // Get current SVG state
-        const state = this.annotator.svg.cloneNode(true);
-        
-        // Add to undo stack
-        this.undoStack.push({
-            state,
-            action,
-            timestamp: Date.now()
-        });
-        
-        // Limit stack size
-        if (this.undoStack.length > this.maxStates) {
-            this.undoStack.shift();
-        }
-    }
-    
-    undo() {
-        if (this.undoStack.length <= 1) return false;
-        
-        // Move current state to redo stack
-        const currentState = this.undoStack.pop();
-        this.redoStack.push(currentState);
-        
-        // Apply the previous state
-        const prevState = this.undoStack[this.undoStack.length - 1];
-        this.applyState(prevState.state);
-        return true;
-    }
-    
-    redo() {
-        if (this.redoStack.length === 0) return false;
-        
-        // Get next state from redo stack
-        const nextState = this.redoStack.pop();
-        this.undoStack.push(nextState);
-        
-        // Apply the state
-        this.applyState(nextState.state);
-        return true;
-    }
-    
-    applyState(savedSvg) {
-        // Temporarily disable events while applying state
-        const wasEnabled = this.annotator.enabled;
-        this.annotator.disable();
-        
-        // Replace the current SVG with the saved state
-        const parent = this.annotator.svg.parentNode;
-        parent.replaceChild(savedSvg, this.annotator.svg);
-        this.annotator.svg = savedSvg;
-        
-        // Re-initialize references and event handlers
-        this.annotator.refreshReferences();
-        
-        // Re-enable if it was enabled before
-        if (wasEnabled) this.annotator.enable();
-    }
-    
-    hasUndo() {
-        return this.undoStack.length > 1;
-    }
-    
-    hasRedo() {
-        return this.redoStack.length > 0;
-    }
-    
-    clearHistory() {
-        this.undoStack = [];
-        this.redoStack = [];
-        // Save the current state as the initial state
-        this.saveState('initial');
-    }
-}
+// Module exports
+export default MarkinJS;
