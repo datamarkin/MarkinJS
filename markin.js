@@ -1,9 +1,22 @@
 // MarkinJS - SVG Annotation Library
 // Main namespace and module pattern
 const MarkinJS = (function() {
-    // Private variables and constants
+    // Constants
     const VERSION = "0.1.0";
-    
+    const DEFAULT_ZOOM = 1.0;
+    const DEFAULT_STROKE_WIDTH = 2;
+    const DEFAULT_HANDLE_RADIUS = 4;
+    const DEFAULT_CIRCLE_RADIUS = 5;
+
+    // Safe SVG attributes whitelist (blocks event handlers)
+    const SAFE_ATTRIBUTES = new Set([
+        'id', 'class', 'fill', 'stroke', 'stroke-width', 'stroke-opacity',
+        'fill-opacity', 'r', 'cx', 'cy', 'x', 'y', 'width', 'height',
+        'points', 'x1', 'y1', 'x2', 'y2', 'vector-effect', 'data-role',
+        'data-uuid', 'data-label', 'data-class', 'data-bound-to',
+        'data-contain', 'data-base-stroke-width', 'data-base-radius'
+    ]);
+
     // Utility functions
     const utils = {
         generateUUID() {
@@ -17,8 +30,14 @@ const MarkinJS = (function() {
             pt.x = clientX;
             pt.y = clientY;
             const ctm = svg.getScreenCTM();
-            if (!ctm) return pt;
+            if (!ctm) {
+                throw new Error('Unable to transform coordinates: getScreenCTM() returned null');
+            }
             return pt.matrixTransform(ctm.inverse());
+        },
+
+        safeDivide(numerator, denominator, defaultValue = 0) {
+            return denominator === 0 ? defaultValue : numerator / denominator;
         },
         
         clientToSVGDelta(svg, clientDeltaX, clientDeltaY) {
@@ -88,6 +107,54 @@ const MarkinJS = (function() {
             }
         },
         
+        // Calculate bounding box of a polygon's points
+        polygonBounds(points) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const p of points) {
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
+            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+        },
+
+        // Translate an SVG element by a delta, handling rect/circle/polygon types
+        translateElement(element, dx, dy) {
+            const tag = element.tagName.toLowerCase();
+            if (tag === 'rect') {
+                element.setAttribute('x', parseFloat(element.getAttribute('x')) + dx);
+                element.setAttribute('y', parseFloat(element.getAttribute('y')) + dy);
+            } else if (tag === 'circle') {
+                element.setAttribute('cx', parseFloat(element.getAttribute('cx')) + dx);
+                element.setAttribute('cy', parseFloat(element.getAttribute('cy')) + dy);
+            } else if (tag === 'polygon') {
+                const points = utils.pointsToArray(element.getAttribute('points'));
+                const moved = points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                element.setAttribute('points', utils.formatPoints(moved));
+            }
+        },
+
+        // Rescale an element's stroke width (and radius, for circles) to match a zoom level.
+        // Reads the pre-zoom base from data-base-stroke-width / data-base-radius.
+        applyZoomToElement(element, zoom) {
+            const baseStrokeWidth = parseFloat(
+                element.getAttribute('data-base-stroke-width') || 2
+            );
+            element.setAttribute('stroke-width', baseStrokeWidth / zoom);
+
+            if (element.tagName.toLowerCase() === 'circle') {
+                const storedBaseRadius = element.getAttribute('data-base-radius');
+                const baseRadius = storedBaseRadius
+                    ? parseFloat(storedBaseRadius)
+                    : parseFloat(element.getAttribute('r')) * zoom;
+                if (!storedBaseRadius) {
+                    element.setAttribute('data-base-radius', baseRadius);
+                }
+                element.setAttribute('r', baseRadius / zoom);
+            }
+        },
+
         // Get the role of an element (bbox, polygon, keypoint, etc.)
         getElementRole(element) {
             if (!element) return null;
@@ -114,115 +181,76 @@ const MarkinJS = (function() {
             this.svg = svg;
             this.zoom = zoom;
         }
-        
+
         setZoom(zoom) {
             this.zoom = zoom;
         }
-        
+
+        isSafeAttribute(attrName) {
+            // Exact match or prefix match for data-* attributes
+            if (SAFE_ATTRIBUTES.has(attrName)) return true;
+            if (attrName.startsWith('data-')) return true;
+            return false;
+        }
+
+        // Create an SVG element with safe attributes applied.
+        // Optionally scales stroke width by current zoom, storing the base in data-base-stroke-width.
+        _create(tag, attrs = {}, { scaleStroke = false } = {}) {
+            const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+            if (scaleStroke) {
+                const baseStrokeWidth = attrs.strokeWidth || DEFAULT_STROKE_WIDTH;
+                el.setAttribute('data-base-stroke-width', baseStrokeWidth);
+                el.setAttribute('stroke-width', baseStrokeWidth / this.zoom);
+            }
+            this._applyAttrs(el, attrs, { skipStroke: scaleStroke });
+            return el;
+        }
+
+        _applyAttrs(el, attrs, { skipStroke = false } = {}) {
+            for (const [key, value] of Object.entries(attrs)) {
+                if (skipStroke && key === 'strokeWidth') continue;
+                const attrName = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+                // Block event handlers and validate attribute name
+                if (/^on/.test(attrName) || !this.isSafeAttribute(attrName)) continue;
+                el.setAttribute(attrName, String(value));
+            }
+        }
+
         createRect(x, y, width, height, attrs = {}) {
-            const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            const rect = this._create('rect', attrs, { scaleStroke: true });
             rect.setAttribute('x', x);
             rect.setAttribute('y', y);
             rect.setAttribute('width', width);
             rect.setAttribute('height', height);
-            
-            // Store the original stroke width
-            const baseStrokeWidth = attrs.strokeWidth || 2;
-            rect.setAttribute('data-base-stroke-width', baseStrokeWidth);
-            rect.setAttribute('stroke-width', baseStrokeWidth / this.zoom);
-            
-            // Apply additional attributes
-            Object.entries(attrs).forEach(([key, value]) => {
-                if (key !== 'strokeWidth') { // Already handled
-                    const attrName = key.replace(/([A-Z])/g, '-$1').toLowerCase(); // camelCase to kebab-case
-                    rect.setAttribute(attrName, value);
-                }
-            });
-            
             return rect;
         }
-        
+
         createCircle(cx, cy, r, attrs = {}) {
-            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            const circle = this._create('circle', attrs, { scaleStroke: true });
             circle.setAttribute('cx', cx);
             circle.setAttribute('cy', cy);
-            
-            // Store the original radius as a data attribute
-            const baseRadius = r || 5;
+            const baseRadius = r || DEFAULT_CIRCLE_RADIUS;
             circle.setAttribute('data-base-radius', baseRadius);
             circle.setAttribute('r', baseRadius / this.zoom);
-
-            // Store the original stroke width
-            const baseStrokeWidth = attrs.strokeWidth || 2;
-            circle.setAttribute('data-base-stroke-width', baseStrokeWidth);
-            circle.setAttribute('stroke-width', baseStrokeWidth / this.zoom);
-            
-            // Apply additional attributes
-            Object.entries(attrs).forEach(([key, value]) => {
-                if (key !== 'strokeWidth') { // Already handled
-                    const attrName = key.replace(/([A-Z])/g, '-$1').toLowerCase(); // camelCase to kebab-case
-                    circle.setAttribute(attrName, value);
-                }
-            });
-            
             return circle;
         }
-        
+
         createPolygon(points, attrs = {}) {
-            const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-            
-            // Use the utility function
-            const pointsString = utils.formatPoints(points);
-            polygon.setAttribute('points', pointsString);
-            
-            // Store the original stroke width
-            const baseStrokeWidth = attrs.strokeWidth || 2;
-            polygon.setAttribute('data-base-stroke-width', baseStrokeWidth);
-            polygon.setAttribute('stroke-width', baseStrokeWidth / this.zoom);
-            
-            // Apply additional attributes
-            Object.entries(attrs).forEach(([key, value]) => {
-                if (key !== 'strokeWidth') { // Already handled
-                    const attrName = key.replace(/([A-Z])/g, '-$1').toLowerCase(); // camelCase to kebab-case
-                    polygon.setAttribute(attrName, value);
-                }
-            });
-            
+            const polygon = this._create('polygon', attrs, { scaleStroke: true });
+            polygon.setAttribute('points', utils.formatPoints(points));
             return polygon;
         }
-        
+
         createGroup(attrs = {}) {
-            const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
-            
-            // Apply attributes
-            Object.entries(attrs).forEach(([key, value]) => {
-                const attrName = key.replace(/([A-Z])/g, '-$1').toLowerCase(); // camelCase to kebab-case
-                group.setAttribute(attrName, value);
-            });
-            
-            return group;
+            return this._create('g', attrs);
         }
-        
+
         createLine(x1, y1, x2, y2, attrs = {}) {
-            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            const line = this._create('line', attrs, { scaleStroke: true });
             line.setAttribute('x1', x1);
             line.setAttribute('y1', y1);
             line.setAttribute('x2', x2);
             line.setAttribute('y2', y2);
-            
-            // Store the original stroke width
-            const baseStrokeWidth = attrs.strokeWidth || 2;
-            line.setAttribute('data-base-stroke-width', baseStrokeWidth);
-            line.setAttribute('stroke-width', baseStrokeWidth / this.zoom);
-            
-            // Apply additional attributes
-            Object.entries(attrs).forEach(([key, value]) => {
-                if (key !== 'strokeWidth') { // Already handled
-                    const attrName = key.replace(/([A-Z])/g, '-$1').toLowerCase(); // camelCase to kebab-case
-                    line.setAttribute(attrName, value);
-                }
-            });
-            
             return line;
         }
     }
@@ -456,8 +484,7 @@ const MarkinJS = (function() {
             // Get SVG element
             this.svg = document.getElementById(svgId);
             if (!this.svg) {
-                console.error(`SVG element with id '${svgId}' not found`);
-                return;
+                throw new Error(`SVG element with id '${svgId}' not found`);
             }
             
             // Default options
@@ -485,8 +512,8 @@ const MarkinJS = (function() {
             this.enabled = true;
             this.zoom = this.options.zoom;
             this.dragInfo = null;
-            this.justFinishedDrag = false; // Add a flag to track if we just finished dragging
             this.uuidRegistry = {}; // Initialize the UUID registry object
+            this.containmentCache = null; // Cache for containment elements
             
             // Initialize component systems
             this.events = new EventSystem();
@@ -504,26 +531,40 @@ const MarkinJS = (function() {
             // Bind event handlers
             this.boundHandleMouseMove = this.handleMouseMove.bind(this);
             this.boundHandleClick = this.handleClick.bind(this);
+            this.boundHandleMouseDown = this.handleSvgMouseDown.bind(this);
             this.boundHandleGlobalMouseMove = this.handleGlobalMouseMove.bind(this);
             this.boundHandleGlobalMouseUp = this.handleGlobalMouseUp.bind(this);
             this.boundHandleKeyDown = this.handleKeyDown.bind(this);
             
             // Initialize events
             this.initEvents();
-            
+
         }
-        
+
+        // Single logging hook. Routes to console by default; can be silenced
+        // via options.silent or redirected via options.logger(level, message).
+        _log(level, message) {
+            if (this.options.silent) return;
+            if (typeof this.options.logger === 'function') {
+                this.options.logger(level, message);
+                return;
+            }
+            (console[level] || console.error)(message);
+        }
+
         // Initialize events
         initEvents() {
             // Add mousemove event to detect selectable elements
             this.svg.addEventListener('mousemove', this.boundHandleMouseMove);
+            // Delegated mousedown for starting drags on any annotation element
+            this.svg.addEventListener('mousedown', this.boundHandleMouseDown);
             // Add click event to select elements
             this.svg.addEventListener('click', this.boundHandleClick);
-            
+
             // Global mouse events for dragging
             document.addEventListener('mousemove', this.boundHandleGlobalMouseMove);
             document.addEventListener('mouseup', this.boundHandleGlobalMouseUp);
-            
+
             // Add keyboard event listener if keyboard controls are enabled
             if (this.options.keyboardControls) {
                 document.addEventListener('keydown', this.boundHandleKeyDown);
@@ -571,8 +612,8 @@ const MarkinJS = (function() {
         
         // Handle click for selection
         handleClick(event) {
-            // Skip if we just finished dragging OR if we're in the middle of a drag
-            if (this.dragInfo || this.justFinishedDrag) return;
+            // Skip if we're in the middle of a drag
+            if (this.dragInfo) return;
             
             // Get the element under the cursor
             const x = event.clientX;
@@ -594,9 +635,6 @@ const MarkinJS = (function() {
                 // Select the element and show handles
                 this.selection.select(targetElement);
                 this.handleManager.showHandlesForElement(targetElement);
-                
-                // Add mousedown handler for direct dragging
-                this.addDirectDragHandler(targetElement);
             } else {
                 // Deselect if clicking empty space
                 if (this.selection.getSelected()) {
@@ -610,58 +648,45 @@ const MarkinJS = (function() {
             }
         }
         
-        // New method to add direct dragging to elements
-        addDirectDragHandler(element) {
+        // Delegated mousedown handler on the SVG root. Replaces per-element drag
+        // handlers — finds the selectable ancestor of the event target and starts
+        // a drag on it, subject to requireSelectionToDrag gating.
+        handleSvgMouseDown(e) {
+            // Skip if the event originated on a handle or indicator
+            if (e.target.hasAttribute('data-handle-type')) return;
+            if (e.target.getAttribute('data-role') === 'cross-indicator') return;
+
+            const element = this.selection.findSelectableElement(e.target);
             if (!element) return;
-            
-            // Remove any existing handler to avoid duplicates
-            if (element._directDragHandler) {
-                element.removeEventListener('mousedown', element._directDragHandler);
+
+            // If requireSelectionToDrag is enabled, only drag selected elements.
+            // The subsequent click will select the element for a later drag.
+            if (this.options.requireSelectionToDrag && element !== this.selection.getSelected()) {
+                return;
             }
-            
-            // Create and store the handler function
-            element._directDragHandler = (e) => {
-                // Don't process if the target is a handle
-                if (e.target.hasAttribute('data-handle-type')) return;
-                if (e.target.getAttribute('data-role') === 'cross-indicator') return;
-                
-                // If requireSelectionToDrag is enabled, only allow dragging of selected elements
-                if (this.options.requireSelectionToDrag && element !== this.selection.getSelected()) {
-                    // If not selected, simply return and let click handler handle selection
-                    return;
-                }
-                
-                e.stopPropagation(); // Prevent new selection
-                
-                // Get current SVG point
-                const svgPoint = utils.clientToSVGPoint(this.svg, e.clientX, e.clientY);
-                
-                // Initialize drag info
-                this.dragInfo = {
-                    handle: null,
-                    handleType: 'direct-move',
-                    index: -1,
-                    targetElement: element,
-                    startClientX: e.clientX,
-                    startClientY: e.clientY,
-                    lastClientX: e.clientX,
-                    lastClientY: e.clientY,
-                    startSVGX: svgPoint.x,
-                    startSVGY: svgPoint.y,
-                    originalData: this.getElementData(element)
-                };
-                
-                // Emit dragstart event
-                this.events.emit('dragstart', {
-                    element: element,
-                    type: element.tagName.toLowerCase(),
-                    handleType: 'direct-move',
-                    position: svgPoint
-                });
+
+            const svgPoint = utils.clientToSVGPoint(this.svg, e.clientX, e.clientY);
+
+            this.dragInfo = {
+                handle: null,
+                handleType: 'direct-move',
+                index: -1,
+                targetElement: element,
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                lastClientX: e.clientX,
+                lastClientY: e.clientY,
+                startSVGX: svgPoint.x,
+                startSVGY: svgPoint.y,
+                originalData: this.getElementData(element)
             };
-            
-            // Add the handler
-            element.addEventListener('mousedown', element._directDragHandler);
+
+            this.events.emit('dragstart', {
+                element: element,
+                type: element.tagName.toLowerCase(),
+                handleType: 'direct-move',
+                position: svgPoint
+            });
         }
         
         // Handle global mouse move for dragging
@@ -787,17 +812,9 @@ const MarkinJS = (function() {
                 this.selection.select(targetElement);
                 this.handleManager.showHandlesForElement(targetElement);
             }
-            
-            // Set the flag to indicate we just finished dragging
-            this.justFinishedDrag = true;
-            
+
             // Clear drag info
             this.dragInfo = null;
-            
-            // Set a timeout to reset the flag after a short delay
-            setTimeout(() => {
-                this.justFinishedDrag = false;
-            }, 200); // Increased to 200ms to allow more time for event processing
         }
         
         // Handle keyboard events
@@ -981,6 +998,63 @@ const MarkinJS = (function() {
             this.handleManager.clearHandles();
         }
         
+        // Handle binding relationships when deleting an element
+        _handleBindingOnDelete(element, group) {
+            if (!this.options.bindElements) return;
+
+            const elementId = element.getAttribute('id');
+            const elementRole = utils.getElementRole(element);
+            let deletionMode = 'unbind';
+            let rulesToApply = [];
+
+            // Determine deletion mode from group's rules
+            if (group) {
+                try {
+                    const rules = JSON.parse(group.getAttribute('data-deletion-rules') || '{}');
+                    if (rules[elementRole] && Array.isArray(rules[elementRole]) && rules[elementRole].length > 0) {
+                        deletionMode = 'delete';
+                        rulesToApply = rules[elementRole];
+                    }
+                } catch (e) {
+                    this._log('error', `Error parsing deletion rules: ${e.message}`);
+                }
+            }
+
+            // Forward: handle elements bound TO this element
+            if (elementId) {
+                const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(elementId)}"]`);
+                if (deletionMode === 'delete') {
+                    boundElements.forEach(bound => {
+                        if (bound.parentNode) {
+                            bound.parentNode.removeChild(bound);
+                            const boundUuid = bound.getAttribute('data-uuid');
+                            if (boundUuid && this.uuidRegistry[boundUuid]) {
+                                delete this.uuidRegistry[boundUuid];
+                            }
+                        }
+                    });
+                } else {
+                    boundElements.forEach(bound => bound.removeAttribute('data-bound-to'));
+                }
+            }
+
+            // Reverse: handle elements THIS element is bound TO
+            if (element.hasAttribute('data-bound-to') && rulesToApply.length > 0) {
+                const boundToId = element.getAttribute('data-bound-to');
+                const boundToElement = this.svg.querySelector(`#${CSS.escape(boundToId)}`);
+                if (boundToElement) {
+                    const boundToRole = utils.getElementRole(boundToElement);
+                    if (rulesToApply.includes(boundToRole) && boundToElement.parentNode) {
+                        boundToElement.parentNode.removeChild(boundToElement);
+                        const boundToUuid = boundToElement.getAttribute('data-uuid');
+                        if (boundToUuid && this.uuidRegistry[boundToUuid]) {
+                            delete this.uuidRegistry[boundToUuid];
+                        }
+                    }
+                }
+            }
+        }
+
         // Delete an element and any related elements based on rules
         deleteElement(element) {
             if (!element) return;
@@ -1013,90 +1087,13 @@ const MarkinJS = (function() {
                 return;
             }
             
-            // Get element ID for binding checks
-            const elementId = element.getAttribute('id');
-            const elementRole = utils.getElementRole(element);
-            
-            // Check if we need to delete bound elements or just unbind them
-            if (this.options.bindElements) {
-                let deletionMode = 'unbind'; // Default is to just unbind elements
-                let rulesToApply = []; // Elements to delete based on rules
-                
-                // Check for deletion rules that might apply
-                if (group) {
-                    const rulesJson = group.getAttribute('data-deletion-rules');
-                    if (rulesJson) {
-                        try {
-                            const rules = JSON.parse(rulesJson);
-                            
-                            // If the rule for this element type includes other elements,
-                            // those should be deleted
-                            if (rules[elementRole] && Array.isArray(rules[elementRole]) && rules[elementRole].length > 0) {
-                                deletionMode = 'delete';
-                                rulesToApply = rules[elementRole];
-                            }
-                        } catch (e) {
-                            console.error('Error parsing deletion rules:', e);
-                        }
-                    }
-                }
-                
-                if (elementId) {
-                    // 1. Handle elements bound TO this element (elements that depend on this one)
-                    const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(elementId)}"]`);
-                    
-                    if (deletionMode === 'delete') {
-                        // Delete bound elements
-                        boundElements.forEach(bound => {
-                            // Don't recursively delete to avoid potential infinite loops
-                            if (bound.parentNode) {
-                                bound.parentNode.removeChild(bound);
-                                
-                                // Remove from UUID registry
-                                const boundUuid = bound.getAttribute('data-uuid');
-                                if (boundUuid && this.uuidRegistry && this.uuidRegistry[boundUuid]) {
-                                    delete this.uuidRegistry[boundUuid];
-                                }
-                            }
-                        });
-                    } else {
-                        // Just unbind elements
-                        boundElements.forEach(bound => {
-                            bound.removeAttribute('data-bound-to');
-                        });
-                    }
-                }
-                
-                // 2. Handle elements that THIS element is bound TO (elements this one depends on)
-                // This implements the reverse relationship for deletion rules
-                if (element.hasAttribute('data-bound-to')) {
-                    const boundToId = element.getAttribute('data-bound-to');
-                    const boundToElement = this.svg.querySelector(`#${CSS.escape(boundToId)}`);
-                    
-                    if (boundToElement && rulesToApply.length > 0) {
-                        const boundToRole = utils.getElementRole(boundToElement);
-                        
-                        // Check if the bound-to element's role is in the deletion rules
-                        if (rulesToApply.includes(boundToRole)) {
-                            // Delete the element this is bound to (typically the bbox)
-                            if (boundToElement.parentNode) {
-                                boundToElement.parentNode.removeChild(boundToElement);
-                                
-                                // Remove from UUID registry
-                                const boundToUuid = boundToElement.getAttribute('data-uuid');
-                                if (boundToUuid && this.uuidRegistry && this.uuidRegistry[boundToUuid]) {
-                                    delete this.uuidRegistry[boundToUuid];
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
+            // Handle binding relationships before removing the element
+            this._handleBindingOnDelete(element, group);
+
             // Remove element from its parent
             if (element.parentNode) {
                 element.parentNode.removeChild(element);
-                
+
                 // If parent is a group, check if it's now empty and should be removed
                 if (group) {
                     this.cleanupGroupIfNeeded(group);
@@ -1126,6 +1123,9 @@ const MarkinJS = (function() {
                 delete this.uuidRegistry[uuid];
             }
             
+            // Invalidate containment cache — deleted element may have had data-contain
+            this.containmentCache = null;
+
             // Save state after deletion
             this.saveState('delete_element');
         }
@@ -1203,6 +1203,9 @@ const MarkinJS = (function() {
                 delete this.uuidRegistry[groupId];
             }
             
+            // Invalidate containment cache — deleted group may have contained data-contain elements
+            this.containmentCache = null;
+
             // Emit event after group deletion
             this.events.emit('deletegroup', {
                 groupId: groupId
@@ -1258,48 +1261,169 @@ const MarkinJS = (function() {
             return null;
         }
         
-        // Create a new annotation
-        createAnnotation(options = {}) {
-            // Validate input
+        // Build the bbox child for an annotation, appending to group. Returns bbox or null.
+        _buildBbox(settings, group) {
+            if (!settings.requireBbox && !settings.bbox) return null;
+
+            let bx, by, bw, bh;
+            if (settings.bbox) {
+                const [xmin, ymin, xmax, ymax] = settings.bbox;
+                bx = xmin; by = ymin; bw = xmax - xmin; bh = ymax - ymin;
+            } else {
+                bx = settings.x; by = settings.y; bw = settings.width; bh = settings.height;
+            }
+
+            const bbox = this.elementFactory.createRect(bx, by, bw, bh, {
+                fill: settings.fill,
+                stroke: settings.stroke,
+                fillOpacity: 0.3,
+                strokeOpacity: 0.8,
+                class: 'BboxElement',
+                vectorEffect: "non-scaling-stroke",
+                'data-role': 'bbox',
+                'id': `bbox-${settings.uuid}`
+            });
+
+            this.uuidRegistry[`bbox-${settings.uuid}`] = { type: 'rect', element: bbox };
+
+            if (settings.bindElements && settings.containRules && settings.containRules.length > 0) {
+                bbox.setAttribute('data-contain', settings.containRules.join(','));
+            } else if (settings.bindElements && settings.bboxContainPolygon && settings.bboxContainKeypoints) {
+                bbox.setAttribute('data-contain', 'polygon,keypoint');
+            }
+
+            group.appendChild(bbox);
+            return bbox;
+        }
+
+        // Build the polygon child for an annotation, appending to group if segmentation is provided.
+        _buildPolygon(settings, group, bbox) {
+            if (!settings.segmentation || settings.segmentation.length < 6) return null;
+
+            const polygon = this.createPolygonFromSegmentation(settings.segmentation, {
+                fill: settings.fill,
+                stroke: settings.stroke,
+                fillOpacity: 0.3,
+                strokeOpacity: 0.8,
+                vectorEffect: "non-scaling-stroke",
+                class: 'PolygonElement',
+                'data-role': 'polygon',
+                'id': `polygon-${settings.uuid}`
+            });
+
+            this.uuidRegistry[`polygon-${settings.uuid}`] = { type: 'polygon', element: polygon };
+
+            if (bbox && settings.bindElements) {
+                polygon.setAttribute('data-bound-to', bbox.getAttribute('id'));
+            } else if (!settings.bindElements) {
+                polygon.setAttribute('data-ignore-containment', 'true');
+            }
+
+            group.appendChild(polygon);
+            return polygon;
+        }
+
+        // Build keypoint children for an annotation, appending to group.
+        _buildKeypoints(settings, group, bbox) {
+            if (!settings.keypoints || settings.keypoints.length === 0) return;
+
+            settings.keypoints.forEach((keypoint, index) => {
+                if (!keypoint.point || keypoint.point.length !== 2) return;
+
+                const [x, y] = keypoint.point;
+                const name = keypoint.name || `keypoint-${index}`;
+
+                const circle = this.elementFactory.createCircle(x, y, 5, {
+                    fill: '#FFFFFF',
+                    stroke: settings.stroke,
+                    fillOpacity: 0.7,
+                    strokeOpacity: 0.8,
+                    vectorEffect: "non-scaling-stroke",
+                    class: 'KeypointElement',
+                    'data-role': 'keypoint',
+                    'data-label': name,
+                    'id': `keypoint-${name}-${settings.uuid}`
+                });
+
+                this.uuidRegistry[`keypoint-${name}-${settings.uuid}`] = { type: 'circle', element: circle };
+
+                if (bbox && settings.bindElements) {
+                    circle.setAttribute('data-bound-to', bbox.getAttribute('id'));
+                } else if (!settings.bindElements) {
+                    circle.setAttribute('data-ignore-containment', 'true');
+                }
+
+                group.appendChild(circle);
+            });
+        }
+
+        // Validate createAnnotation options. Returns an error message string
+        // on failure, or null if valid.
+        _validateAnnotation(options) {
+            const isNum = v => typeof v === 'number' && !isNaN(v);
+
             if (options.bbox) {
                 if (!Array.isArray(options.bbox) || options.bbox.length !== 4) {
-                    console.error('Invalid bbox: must be an array of 4 numbers [x1, y1, x2, y2]');
-                    return null;
+                    return 'Invalid bbox: must be an array of 4 numbers [x1, y1, x2, y2]';
                 }
-                if (options.bbox.some(v => typeof v !== 'number' || isNaN(v))) {
-                    console.error('Invalid bbox: all values must be valid numbers');
-                    return null;
+                if (!options.bbox.every(isNum)) {
+                    return 'Invalid bbox: all values must be valid numbers';
                 }
             }
             if (options.keypoints) {
                 if (!Array.isArray(options.keypoints)) {
-                    console.error('Invalid keypoints: must be an array');
-                    return null;
+                    return 'Invalid keypoints: must be an array';
                 }
                 for (const kp of options.keypoints) {
                     if (!kp.point || !Array.isArray(kp.point) || kp.point.length !== 2) {
-                        console.error('Invalid keypoint: each keypoint must have a point array of [x, y]');
-                        return null;
+                        return 'Invalid keypoint: each keypoint must have a point array of [x, y]';
                     }
-                    if (kp.point.some(v => typeof v !== 'number' || isNaN(v))) {
-                        console.error('Invalid keypoint: point values must be valid numbers');
-                        return null;
+                    if (!kp.point.every(isNum)) {
+                        return 'Invalid keypoint: point values must be valid numbers';
                     }
                 }
             }
             if (options.segmentation) {
                 if (!Array.isArray(options.segmentation)) {
-                    console.error('Invalid segmentation: must be a flat array of numbers');
-                    return null;
+                    return 'Invalid segmentation: must be a flat array of numbers';
                 }
                 if (options.segmentation.length < 6 || options.segmentation.length % 2 !== 0) {
-                    console.error('Invalid segmentation: must have at least 6 values (3 points) and an even number of values');
-                    return null;
+                    return 'Invalid segmentation: must have at least 6 values (3 points) and an even number of values';
                 }
-                if (options.segmentation.some(v => typeof v !== 'number' || isNaN(v))) {
-                    console.error('Invalid segmentation: all values must be valid numbers');
-                    return null;
+                if (!options.segmentation.every(isNum)) {
+                    return 'Invalid segmentation: all values must be valid numbers';
                 }
+            }
+            return null;
+        }
+
+        /**
+         * Create a new annotation group containing an optional bbox, polygon, and keypoints.
+         * @param {object} [options] - Annotation fields.
+         * @param {string} [options.uuid] - Stable identifier. Auto-generated if omitted.
+         * @param {string} [options.class] - Semantic class/label for the annotation.
+         * @param {number[]} [options.bbox] - [xmin, ymin, xmax, ymax]. If omitted, uses x/y/width/height.
+         * @param {number} [options.x=100]
+         * @param {number} [options.y=100]
+         * @param {number} [options.width=200]
+         * @param {number} [options.height=150]
+         * @param {number[]} [options.segmentation] - Flat [x1,y1,x2,y2,...] polygon points (≥6, even length).
+         * @param {Array<{point:number[], name?:string}>} [options.keypoints]
+         * @param {string} [options.fill]
+         * @param {string} [options.stroke]
+         * @param {string} [options.id] - Optional DOM id for the group.
+         * @param {boolean} [options.requireBbox]
+         * @param {boolean} [options.bindElements]
+         * @param {string[]} [options.containRules] - e.g. ['polygon','keypoint'].
+         * @param {object} [options.deletionRules]
+         * @returns {SVGGElement|null} The created <g> element, or null on invalid input (unless strict).
+         */
+        createAnnotation(options = {}) {
+            const validationError = this._validateAnnotation(options);
+            if (validationError) {
+                if (this.options.strict) throw new TypeError(validationError);
+                this._log('error', validationError);
+                return null;
             }
 
             // Default options
@@ -1343,116 +1467,11 @@ const MarkinJS = (function() {
                 group.setAttribute('data-deletion-rules', JSON.stringify(settings.deletionRules));
             }
             
-            // Create bbox if required or explicitly provided
-            let bbox = null;
-            if (settings.requireBbox || settings.bbox) {
-                if (settings.bbox) {
-                    // Use provided bbox
-                    const [xmin, ymin, xmax, ymax] = settings.bbox;
-                    bbox = this.elementFactory.createRect(xmin, ymin, xmax - xmin, ymax - ymin, {
-                        fill: settings.fill,
-                        stroke: settings.stroke,
-                        fillOpacity: 0.3,
-                        strokeOpacity: 0.8,
-                        class: 'BboxElement',
-                        vectorEffect: "non-scaling-stroke",
-                        'data-role': 'bbox',
-                        'id': `bbox-${settings.uuid}`
-                    });
-                } else {
-                    // Create default bbox
-                    bbox = this.elementFactory.createRect(settings.x, settings.y, settings.width, settings.height, {
-                        fill: settings.fill,
-                        stroke: settings.stroke,
-                        fillOpacity: 0.3,
-                        strokeOpacity: 0.8,
-                        class: 'BboxElement',
-                        vectorEffect: "non-scaling-stroke",
-                        'data-role': 'bbox',
-                        'id': `bbox-${settings.uuid}`
-                    });
-                }
-                
-                // Add bbox to UUID registry
-                this.uuidRegistry[`bbox-${settings.uuid}`] = { type: 'rect', element: bbox };
-                
-                // Set containment rules if specified and binding is enabled
-                if (settings.bindElements && settings.containRules && settings.containRules.length > 0) {
-                    bbox.setAttribute('data-contain', settings.containRules.join(','));
-                } else if (settings.bindElements && settings.bboxContainPolygon && settings.bboxContainKeypoints) {
-                    // Default containment rules
-                    bbox.setAttribute('data-contain', 'polygon,keypoint');
-                }
-                
-                group.appendChild(bbox);
-            }
-            
-            // Add polygon if provided
-            let polygon = null;
-            if (settings.segmentation && settings.segmentation.length >= 6) {
-                polygon = this.createPolygonFromSegmentation(settings.segmentation, {
-                    fill: settings.fill,
-                    stroke: settings.stroke,
-                    fillOpacity: 0.3,
-                    strokeOpacity: 0.8,
-                    vectorEffect: "non-scaling-stroke",
-                    class: 'PolygonElement',
-                    'data-role': 'polygon',
-                    'id': `polygon-${settings.uuid}`
-                });
-                
-                // Add polygon to UUID registry
-                this.uuidRegistry[`polygon-${settings.uuid}`] = { type: 'polygon', element: polygon };
-                
-                // Bind polygon to bbox if both exist and binding is enabled
-                if (bbox && settings.bindElements) {
-                    polygon.setAttribute('data-bound-to', bbox.getAttribute('id'));
-                } else if (!settings.bindElements) {
-                    // Mark as ignoring containment if binding is disabled
-                    polygon.setAttribute('data-ignore-containment', 'true');
-                }
-                
-                group.appendChild(polygon);
-            }
-            
-            // Add keypoints if provided
-            if (settings.keypoints && settings.keypoints.length > 0) {
-                settings.keypoints.forEach((keypoint, index) => {
-                    if (!keypoint.point || keypoint.point.length !== 2) return;
-                    
-                    const [x, y] = keypoint.point;
-                    const name = keypoint.name || `keypoint-${index}`;
-                    
-                    const circle = this.elementFactory.createCircle(x, y, 5, {
-                        fill: '#FFFFFF',
-                        stroke: settings.stroke,
-                        fillOpacity: 0.7,
-                        strokeOpacity: 0.8,
-                        vectorEffect: "non-scaling-stroke",
-                        class: 'KeypointElement',
-                        'data-role': 'keypoint',
-                        'data-label': name,
-                        'id': `keypoint-${name}-${settings.uuid}`
-                    });
-                    
-                    // Add keypoint to UUID registry
-                    this.uuidRegistry[`keypoint-${name}-${settings.uuid}`] = { type: 'circle', element: circle };
-                    
-                    // Bind keypoint to bbox if both exist and binding is enabled
-                    if (bbox && settings.bindElements) {
-                        circle.setAttribute('data-bound-to', bbox.getAttribute('id'));
-                    } else if (!settings.bindElements) {
-                        // Mark as ignoring containment if binding is disabled
-                        circle.setAttribute('data-ignore-containment', 'true');
-                    }
-                    
-                    group.appendChild(circle);
-                    
-                    // Add direct drag capabilities to keypoints
-                    this.addDirectDragHandler(circle);
-                });
-            }
-            
+            // Build child elements
+            const bbox = this._buildBbox(settings, group);
+            this._buildPolygon(settings, group, bbox);
+            this._buildKeypoints(settings, group, bbox);
+
             // Select the newly created annotation (select the group)
             this.selection.select(group);
             this.handleManager.showHandlesForElement(group);
@@ -1469,9 +1488,12 @@ const MarkinJS = (function() {
                 class: settings.class
             });
             
+            // Invalidate containment cache — new annotation may have data-contain
+            this.containmentCache = null;
+
             // Save state after creating annotation
             this.saveState('create_annotation');
-            
+
             return group;
         }
         
@@ -1509,14 +1531,15 @@ const MarkinJS = (function() {
             
             // Remove event listeners
             this.svg.removeEventListener('mousemove', this.boundHandleMouseMove);
+            this.svg.removeEventListener('mousedown', this.boundHandleMouseDown);
             this.svg.removeEventListener('click', this.boundHandleClick);
             document.removeEventListener('mousemove', this.boundHandleGlobalMouseMove);
             document.removeEventListener('mouseup', this.boundHandleGlobalMouseUp);
-            
+
             if (this.options.keyboardControls) {
                 document.removeEventListener('keydown', this.boundHandleKeyDown);
             }
-            
+
             this.enabled = false;
             this.events.emit('disabled', { message: 'Annotator disabled' });
         }
@@ -1529,6 +1552,7 @@ const MarkinJS = (function() {
             } else {
                 // Ensure all listeners are removed even if already disabled
                 this.svg.removeEventListener('mousemove', this.boundHandleMouseMove);
+                this.svg.removeEventListener('mousedown', this.boundHandleMouseDown);
                 this.svg.removeEventListener('click', this.boundHandleClick);
                 document.removeEventListener('mousemove', this.boundHandleGlobalMouseMove);
                 document.removeEventListener('mouseup', this.boundHandleGlobalMouseUp);
@@ -1551,13 +1575,16 @@ const MarkinJS = (function() {
             // Clear UUID registry
             this.uuidRegistry = {};
 
+            // Clear containment cache
+            this.containmentCache = null;
+
             this.events.emit('destroyed', { message: 'Annotator destroyed' });
         }
 
         // Update zoom level
         setZoom(zoom) {
             if (typeof zoom !== 'number' || zoom <= 0) {
-                console.error('Invalid zoom level. Must be a positive number.');
+                this._log('error', 'Invalid zoom level. Must be a positive number.');
                 return;
             }
             
@@ -1575,66 +1602,40 @@ const MarkinJS = (function() {
             this.refreshElementsForZoom();
             return this;
         }
-        
+
+        // Refresh containment cache for performance optimization
+        refreshContainmentCache() {
+            this.containmentCache = null;
+        }
+
         // Refresh all elements to match current zoom level
         refreshElementsForZoom() {
-            // Select all elements that might have zoom-dependent attributes
             const elements = this.svg.querySelectorAll('rect, circle, polygon, line');
-            
+
             elements.forEach(element => {
-                const tagName = element.tagName.toLowerCase();
-                
                 // Skip handle elements and other utility elements
-                if (element.hasAttribute('data-handle-type') || 
+                if (element.hasAttribute('data-handle-type') ||
                     element.getAttribute('data-role') === 'cross-indicator') {
                     return;
                 }
-                
-                // Get the base stroke width (2 is the default)
-                const baseStrokeWidth = element.hasAttribute('data-base-stroke-width') ? 
-                    parseFloat(element.getAttribute('data-base-stroke-width')) : 2;
-                
-                // Store the base stroke width for future reference if not already stored
-                if (!element.hasAttribute('data-base-stroke-width')) {
-                    element.setAttribute('data-base-stroke-width', baseStrokeWidth);
-                }
-                
-                // Update stroke-width based on zoom
-                element.setAttribute('stroke-width', baseStrokeWidth / this.zoom);
-                
-                // Circle-specific updates
-                if (tagName === 'circle') {
-                    // Get the base radius
-                    const baseRadius = element.hasAttribute('data-base-radius') ? 
-                        parseFloat(element.getAttribute('data-base-radius')) : 
-                        parseFloat(element.getAttribute('r')) * this.zoom;
-                    
-                    // Store the base radius for future reference if not already stored
-                    if (!element.hasAttribute('data-base-radius')) {
-                        element.setAttribute('data-base-radius', baseRadius);
-                    }
-                    
-                    // Update radius based on zoom
-                    element.setAttribute('r', baseRadius / this.zoom);
-                    
-                    // If the circle is selected, update the cross indicator and selection highlight
-                    if (element.hasAttribute('data-selected') && element._originalProps) {
-                        // Update radius for selection effect with proper zoom scaling
-                        const highlightRadius = (element._originalProps.baseRadius * 3) / this.zoom;
-                        element.setAttribute('r', highlightRadius);
-                        
-                        // Update cross indicator
-                        this.handleManager.updateCrossIndicator(element);
-                    }
+
+                utils.applyZoomToElement(element, this.zoom);
+
+                // For selected circles, override r with highlight radius and redraw cross indicator
+                if (element.tagName.toLowerCase() === 'circle' &&
+                    element.hasAttribute('data-selected') && element._originalProps) {
+                    const highlightRadius = (element._originalProps.baseRadius * 3) / this.zoom;
+                    element.setAttribute('r', highlightRadius);
+                    this.handleManager.updateCrossIndicator(element);
                 }
             });
-            
+
             // Update handles if there's a selected element
             const selected = this.selection.getSelected();
             if (selected) {
                 this.handleManager.updateHandlePositions(selected);
             }
-            
+
             // Scale handle sizes according to zoom level
             this.handleManager.scaleHandlesForZoom(this.zoom);
         }
@@ -1894,39 +1895,13 @@ const MarkinJS = (function() {
             const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(targetId)}"]`);
 
             boundElements.forEach(element => {
-                const tagName = element.tagName.toLowerCase();
+                utils.translateElement(element, svgDelta.x, svgDelta.y);
 
-                if (tagName === 'circle') {
-                    const cx = parseFloat(element.getAttribute('cx'));
-                    const cy = parseFloat(element.getAttribute('cy'));
-                    
-                    element.setAttribute('cx', cx + svgDelta.x);
-                    element.setAttribute('cy', cy + svgDelta.y);
-                    
-                    // Update cross indicator if selected
-                    if (element.hasAttribute('data-selected')) {
-                        this.handleManager.updateCrossIndicator(element);
-                    }
-                } else if (tagName === 'polygon') {
-                    const pointsString = element.getAttribute('points');
-                    if (!pointsString) return;
-                    
-                    const points = utils.pointsToArray(pointsString);
-                    const updatedPoints = points.map(p => ({
-                        x: p.x + svgDelta.x,
-                        y: p.y + svgDelta.y
-                    }));
-                    
-                    element.setAttribute('points', utils.formatPoints(updatedPoints));
-                } else if (tagName === 'rect') {
-                    const x = parseFloat(element.getAttribute('x'));
-                    const y = parseFloat(element.getAttribute('y'));
-                    
-                    element.setAttribute('x', x + svgDelta.x);
-                    element.setAttribute('y', y + svgDelta.y);
+                // Update cross indicator if selected circle
+                if (element.tagName.toLowerCase() === 'circle' && element.hasAttribute('data-selected')) {
+                    this.handleManager.updateCrossIndicator(element);
                 }
-                
-                // Check if this element has handles shown and update them
+
                 if (this.selection.getSelected() === element) {
                     this.handleManager.updateHandlePositions(element);
                 }
@@ -1951,9 +1926,6 @@ const MarkinJS = (function() {
             // Find all elements bound to this element
             const boundElements = this.svg.querySelectorAll(`[data-bound-to="${CSS.escape(targetId)}"]`);
 
-            // Guard against zero-size originals to avoid division by zero
-            if (originalWidth === 0 || originalHeight === 0) return;
-
             boundElements.forEach(element => {
                 const tagName = element.tagName.toLowerCase();
 
@@ -1961,8 +1933,8 @@ const MarkinJS = (function() {
                     // Calculate relative position in the original rectangle (0-1 range)
                     const cx = parseFloat(element.getAttribute('cx'));
                     const cy = parseFloat(element.getAttribute('cy'));
-                    const relativeX = (cx - originalX) / originalWidth;
-                    const relativeY = (cy - originalY) / originalHeight;
+                    const relativeX = utils.safeDivide(cx - originalX, originalWidth);
+                    const relativeY = utils.safeDivide(cy - originalY, originalHeight);
                     
                     // Apply new position based on resized rectangle and relative position
                     const newCx = deltaX + originalX + (relativeX * originalWidth * scaleX);
@@ -1982,8 +1954,8 @@ const MarkinJS = (function() {
                     const points = utils.pointsToArray(pointsString);
                     const updatedPoints = points.map(p => {
                         // Calculate relative position in original rectangle
-                        const relativeX = (p.x - originalX) / originalWidth;
-                        const relativeY = (p.y - originalY) / originalHeight;
+                        const relativeX = utils.safeDivide(p.x - originalX, originalWidth);
+                        const relativeY = utils.safeDivide(p.y - originalY, originalHeight);
                         
                         // Apply new position
                         return {
@@ -2005,160 +1977,108 @@ const MarkinJS = (function() {
             this.enforceContainment(targetElement);
         }
         
+        // Get bounding rectangle {x, y, width, height} of a container element.
+        _getContainerBounds(container) {
+            const tag = container.tagName.toLowerCase();
+            if (tag === 'rect') {
+                return {
+                    x: parseFloat(container.getAttribute('x')),
+                    y: parseFloat(container.getAttribute('y')),
+                    width: parseFloat(container.getAttribute('width')),
+                    height: parseFloat(container.getAttribute('height'))
+                };
+            }
+            if (tag === 'polygon') {
+                return utils.polygonBounds(utils.pointsToArray(container.getAttribute('points')));
+            }
+            return null;
+        }
+
+        // Constrain strategies — one per contained-element tag.
+        // Returns true if the element was moved.
+        _constrainCircle(element, bounds) {
+            const cx = parseFloat(element.getAttribute('cx'));
+            const cy = parseFloat(element.getAttribute('cy'));
+            const r = parseFloat(element.getAttribute('r'));
+            const newCx = Math.min(Math.max(cx, bounds.x + r), bounds.x + bounds.width - r);
+            const newCy = Math.min(Math.max(cy, bounds.y + r), bounds.y + bounds.height - r);
+            if (newCx === cx && newCy === cy) return false;
+            element.setAttribute('cx', newCx);
+            element.setAttribute('cy', newCy);
+            if (element.hasAttribute('data-selected')) {
+                this.handleManager.updateCrossIndicator(element);
+            }
+            return true;
+        }
+
+        _constrainRect(element, bounds) {
+            const x = parseFloat(element.getAttribute('x'));
+            const y = parseFloat(element.getAttribute('y'));
+            const width = parseFloat(element.getAttribute('width'));
+            const height = parseFloat(element.getAttribute('height'));
+            const newX = Math.min(Math.max(x, bounds.x), bounds.x + bounds.width - width);
+            const newY = Math.min(Math.max(y, bounds.y), bounds.y + bounds.height - height);
+            if (newX === x && newY === y) return false;
+            element.setAttribute('x', newX);
+            element.setAttribute('y', newY);
+            return true;
+        }
+
+        _constrainPolygon(element, bounds) {
+            const pointsString = element.getAttribute('points');
+            if (!pointsString) return false;
+            const points = utils.pointsToArray(pointsString);
+            const pb = utils.polygonBounds(points);
+
+            let adjustX = 0;
+            let adjustY = 0;
+            if (pb.x < bounds.x) adjustX = bounds.x - pb.x;
+            else if (pb.x + pb.width > bounds.x + bounds.width) adjustX = (bounds.x + bounds.width) - (pb.x + pb.width);
+            if (pb.y < bounds.y) adjustY = bounds.y - pb.y;
+            else if (pb.y + pb.height > bounds.y + bounds.height) adjustY = (bounds.y + bounds.height) - (pb.y + pb.height);
+
+            if (adjustX === 0 && adjustY === 0) return false;
+            const adjusted = points.map(p => ({ x: p.x + adjustX, y: p.y + adjustY }));
+            element.setAttribute('points', utils.formatPoints(adjusted));
+            return true;
+        }
+
         // Enforce containment rules for elements that must stay within boundaries
         enforceContainment(element) {
-            // Skip if element is explicitly marked to ignore containment
-            if (element.hasAttribute('data-ignore-containment')) {
-                return;
+            if (element.hasAttribute('data-ignore-containment')) return;
+
+            // Lazily populate the cache; invalidated on annotation add/remove.
+            if (!this.containmentCache) {
+                this.containmentCache = this.svg.querySelectorAll('[data-contain]');
             }
-            
-            // Get all containers with containment rules
-            const containElements = this.svg.querySelectorAll('[data-contain]');
-            
-            // Skip processing if no containers with containment rules
+            const containElements = this.containmentCache;
             if (!containElements || containElements.length === 0) return;
-            
-            // Get element type and role
+
             const elType = element.tagName.toLowerCase();
             const elRole = element.getAttribute('data-role');
-            
-            // For each potential container, check if this element should be contained
+
+            const strategy = {
+                circle: this._constrainCircle,
+                rect: this._constrainRect,
+                polygon: this._constrainPolygon
+            }[elType];
+            if (!strategy) return;
+
+            const elementGroup = element.closest('[data-annotation-group]');
+
             containElements.forEach(container => {
                 const containRules = container.getAttribute('data-contain').split(',');
-                const containerType = container.tagName.toLowerCase();
-                
-                // Check if this element should be contained by this container's rules
-                let shouldBeContained = false;
-                if (elRole && containRules.includes(elRole)) {
-                    shouldBeContained = true;
-                } else if (elType === 'circle' && containRules.includes('keypoint')) {
-                    shouldBeContained = true;
-                } else if (elType === 'polygon' && containRules.includes('polygon')) {
-                    shouldBeContained = true;
-                }
-                
-                // Skip if this element isn't subject to containment by this container
-                if (!shouldBeContained) return;
-                
-                // Also check if they're in the same annotation group
-                const elementGroup = element.closest('[data-annotation-group]');
-                const containerGroup = container.closest('[data-annotation-group]');
-                if (elementGroup !== containerGroup) return;
-                
-                // Get container boundaries
-                let bounds;
-                if (containerType === 'rect') {
-                    bounds = {
-                        x: parseFloat(container.getAttribute('x')),
-                        y: parseFloat(container.getAttribute('y')),
-                        width: parseFloat(container.getAttribute('width')),
-                        height: parseFloat(container.getAttribute('height'))
-                    };
-                } else if (containerType === 'polygon') {
-                    // For polygons, calculate bounding box
-                    const points = utils.pointsToArray(container.getAttribute('points'));
-                    const minX = Math.min(...points.map(p => p.x));
-                    const minY = Math.min(...points.map(p => p.y));
-                    const maxX = Math.max(...points.map(p => p.x));
-                    const maxY = Math.max(...points.map(p => p.y));
-                    
-                    bounds = {
-                        x: minX,
-                        y: minY,
-                        width: maxX - minX,
-                        height: maxY - minY
-                    };
-                }
-                
+                const matchesRule = (elRole && containRules.includes(elRole)) ||
+                    (elType === 'circle' && containRules.includes('keypoint')) ||
+                    (elType === 'polygon' && containRules.includes('polygon'));
+                if (!matchesRule) return;
+                if (elementGroup !== container.closest('[data-annotation-group]')) return;
+
+                const bounds = this._getContainerBounds(container);
                 if (!bounds) return;
-                
-                // Apply containment based on element type
-                if (elType === 'circle') {
-                    const cx = parseFloat(element.getAttribute('cx'));
-                    const cy = parseFloat(element.getAttribute('cy'));
-                    const r = parseFloat(element.getAttribute('r'));
-                    
-                    // Constrain circle within container bounds
-                    const newCx = Math.min(Math.max(cx, bounds.x + r), bounds.x + bounds.width - r);
-                    const newCy = Math.min(Math.max(cy, bounds.y + r), bounds.y + bounds.height - r);
-                    
-                    if (newCx !== cx || newCy !== cy) {
-                        element.setAttribute('cx', newCx);
-                        element.setAttribute('cy', newCy);
-                        
-                        // Update cross indicator if selected
-                        if (element.hasAttribute('data-selected')) {
-                            this.handleManager.updateCrossIndicator(element);
-                        }
-                    }
-                } else if (elType === 'polygon') {
-                    // For polygons, we need to check if any point is outside and adjust
-                    const pointsString = element.getAttribute('points');
-                    if (!pointsString) return;
-                    
-                    const points = utils.pointsToArray(pointsString);
-                    
-                    // Check if any point is outside bounds
-                    let isOutside = false;
-                    points.forEach(p => {
-                        if (p.x < bounds.x || p.x > bounds.x + bounds.width || 
-                            p.y < bounds.y || p.y > bounds.y + bounds.height) {
-                            isOutside = true;
-                        }
-                    });
-                    
-                    // If outside, move all points to keep the polygon inside
-                    if (isOutside) {
-                        // Calculate necessary adjustments
-                        const minX = Math.min(...points.map(p => p.x));
-                        const minY = Math.min(...points.map(p => p.y));
-                        const maxX = Math.max(...points.map(p => p.x));
-                        const maxY = Math.max(...points.map(p => p.y));
-                        
-                        let adjustX = 0;
-                        let adjustY = 0;
-                        
-                        // Calculate X adjustment
-                        if (minX < bounds.x) {
-                            adjustX = bounds.x - minX;
-                        } else if (maxX > bounds.x + bounds.width) {
-                            adjustX = (bounds.x + bounds.width) - maxX;
-                        }
-                        
-                        // Calculate Y adjustment
-                        if (minY < bounds.y) {
-                            adjustY = bounds.y - minY;
-                        } else if (maxY > bounds.y + bounds.height) {
-                            adjustY = (bounds.y + bounds.height) - maxY;
-                        }
-                        
-                        // Apply adjustments to all points
-                        const adjustedPoints = points.map(p => ({
-                            x: p.x + adjustX,
-                            y: p.y + adjustY
-                        }));
-                        
-                        // Update polygon
-                        element.setAttribute('points', utils.formatPoints(adjustedPoints));
-                    }
-                } else if (elType === 'rect') {
-                    const x = parseFloat(element.getAttribute('x'));
-                    const y = parseFloat(element.getAttribute('y'));
-                    const width = parseFloat(element.getAttribute('width'));
-                    const height = parseFloat(element.getAttribute('height'));
-                    
-                    // Constrain rect within container bounds
-                    const newX = Math.min(Math.max(x, bounds.x), bounds.x + bounds.width - width);
-                    const newY = Math.min(Math.max(y, bounds.y), bounds.y + bounds.height - height);
-                    
-                    if (newX !== x || newY !== y) {
-                        element.setAttribute('x', newX);
-                        element.setAttribute('y', newY);
-                    }
-                }
-                
-                // Update handles if needed
-                if (this.selection.getSelected() === element) {
+
+                const moved = strategy.call(this, element, bounds);
+                if (moved && this.selection.getSelected() === element) {
                     this.handleManager.updateHandlePositions(element);
                 }
             });
@@ -2208,25 +2128,10 @@ const MarkinJS = (function() {
             }
         }
         
-        // Refresh references and re-initialize after state changes
-        refreshReferences() {
-            // Re-initialize events
-            this.initEvents();
-            
-            // Re-initialize handle manager
-            this.handleManager.clearHandles();
-            
-            // Update selection manager's reference to the SVG
-            this.selection.annotator = this;
-            
-            // Update element factory's reference to the SVG
-            this.elementFactory.svg = this.svg;
-        }
-
         // Export a single annotation group to a JSON object
         exportAnnotation(group) {
             if (!group || group.tagName.toLowerCase() !== 'g') {
-                console.error('Invalid annotation group provided');
+                this._log('error', 'Invalid annotation group provided');
                 return null;
             }
             
@@ -2302,118 +2207,67 @@ const MarkinJS = (function() {
             return annotation;
         }
 
+        // Normalize fields of a single annotation object in place
+        _normalizeAnnotationFields(annotation, width, height) {
+            if (annotation.bbox) {
+                annotation.bbox.x = utils.safeDivide(annotation.bbox.x, width);
+                annotation.bbox.y = utils.safeDivide(annotation.bbox.y, height);
+                annotation.bbox.width = utils.safeDivide(annotation.bbox.width, width);
+                annotation.bbox.height = utils.safeDivide(annotation.bbox.height, height);
+                annotation.bbox.normalized = true;
+            }
+            if (annotation.polygon && annotation.polygon.points) {
+                annotation.polygon.points = annotation.polygon.points.map(point => ({
+                    x: utils.safeDivide(point.x, width),
+                    y: utils.safeDivide(point.y, height)
+                }));
+                annotation.polygon.normalized = true;
+            }
+            if (annotation.segmentation && Array.isArray(annotation.segmentation)) {
+                for (let i = 0; i < annotation.segmentation.length; i += 2) {
+                    if (i + 1 < annotation.segmentation.length) {
+                        annotation.segmentation[i] = utils.safeDivide(annotation.segmentation[i], width);
+                        annotation.segmentation[i + 1] = utils.safeDivide(annotation.segmentation[i + 1], height);
+                    }
+                }
+                annotation.segmentation_normalized = true;
+            }
+            if (annotation.keypoints && Array.isArray(annotation.keypoints)) {
+                annotation.keypoints.forEach(keypoint => {
+                    if (keypoint.point && keypoint.point.length === 2) {
+                        keypoint.point = [
+                            utils.safeDivide(keypoint.point[0], width),
+                            utils.safeDivide(keypoint.point[1], height)
+                        ];
+                    }
+                });
+                annotation.keypoints_normalized = true;
+            }
+        }
+
+        // Get export dimensions from SVG viewBox or rendered size
+        _getExportDimensions(options) {
+            const viewBox = this.svg.viewBox.baseVal;
+            return {
+                width: options.width || (viewBox ? viewBox.width : this.svg.width.baseVal.value),
+                height: options.height || (viewBox ? viewBox.height : this.svg.height.baseVal.value)
+            };
+        }
+
         // Helper function to normalize coordinates
         normalizeCoordinates(data, width, height) {
             if (!data || !width || !height) return data;
-            
-            // Create a deep copy to avoid modifying the original data
             const normalized = JSON.parse(JSON.stringify(data));
-            
-            // Process all annotations
+
             if (normalized.annotations && Array.isArray(normalized.annotations)) {
-                normalized.annotations.forEach(annotation => {
-                    // Normalize bbox if present
-                    if (annotation.bbox) {
-                        annotation.bbox.x = annotation.bbox.x / width;
-                        annotation.bbox.y = annotation.bbox.y / height;
-                        annotation.bbox.width = annotation.bbox.width / width;
-                        annotation.bbox.height = annotation.bbox.height / height;
-                        
-                        // Add a marker that this is normalized
-                        annotation.bbox.normalized = true;
-                    }
-                    
-                    // Normalize polygon points if present
-                    if (annotation.polygon && annotation.polygon.points) {
-                        annotation.polygon.points = annotation.polygon.points.map(point => ({
-                            x: point.x / width,
-                            y: point.y / height
-                        }));
-                        
-                        annotation.polygon.normalized = true;
-                    }
-                    
-                    // Normalize segmentation (flat array) if present
-                    if (annotation.segmentation && Array.isArray(annotation.segmentation)) {
-                        for (let i = 0; i < annotation.segmentation.length; i += 2) {
-                            if (i + 1 < annotation.segmentation.length) {
-                                annotation.segmentation[i] = annotation.segmentation[i] / width;
-                                annotation.segmentation[i + 1] = annotation.segmentation[i + 1] / height;
-                            }
-                        }
-                        
-                        annotation.segmentation_normalized = true;
-                    }
-                    
-                    // Normalize keypoints if present
-                    if (annotation.keypoints && Array.isArray(annotation.keypoints)) {
-                        annotation.keypoints.forEach(keypoint => {
-                            if (keypoint.point && keypoint.point.length === 2) {
-                                keypoint.point = [
-                                    keypoint.point[0] / width,
-                                    keypoint.point[1] / height
-                                ];
-                            }
-                        });
-                        
-                        annotation.keypoints_normalized = true;
-                    }
-                });
+                normalized.annotations.forEach(a => this._normalizeAnnotationFields(a, width, height));
             } else if (normalized.type === 'annotation') {
-                // Single annotation case
-                
-                // Normalize bbox if present
-                if (normalized.bbox) {
-                    normalized.bbox.x = normalized.bbox.x / width;
-                    normalized.bbox.y = normalized.bbox.y / height;
-                    normalized.bbox.width = normalized.bbox.width / width;
-                    normalized.bbox.height = normalized.bbox.height / height;
-                    
-                    normalized.bbox.normalized = true;
-                }
-                
-                // Normalize polygon points if present
-                if (normalized.polygon && normalized.polygon.points) {
-                    normalized.polygon.points = normalized.polygon.points.map(point => ({
-                        x: point.x / width,
-                        y: point.y / height
-                    }));
-                    
-                    normalized.polygon.normalized = true;
-                }
-                
-                // Normalize segmentation (flat array) if present
-                if (normalized.segmentation && Array.isArray(normalized.segmentation)) {
-                    for (let i = 0; i < normalized.segmentation.length; i += 2) {
-                        if (i + 1 < normalized.segmentation.length) {
-                            normalized.segmentation[i] = normalized.segmentation[i] / width;
-                            normalized.segmentation[i + 1] = normalized.segmentation[i + 1] / height;
-                        }
-                    }
-                    
-                    normalized.segmentation_normalized = true;
-                }
-                
-                // Normalize keypoints if present
-                if (normalized.keypoints && Array.isArray(normalized.keypoints)) {
-                    normalized.keypoints.forEach(keypoint => {
-                        if (keypoint.point && keypoint.point.length === 2) {
-                            keypoint.point = [
-                                keypoint.point[0] / width,
-                                keypoint.point[1] / height
-                            ];
-                        }
-                    });
-                    
-                    normalized.keypoints_normalized = true;
-                }
+                this._normalizeAnnotationFields(normalized, width, height);
             }
-            
-            // Add normalization info to the result
+
             normalized.normalized = true;
             normalized.normalization_width = width;
             normalized.normalization_height = height;
-            
             return normalized;
         }
 
@@ -2436,16 +2290,11 @@ const MarkinJS = (function() {
                 annotations: annotations
             };
             
-            // Apply normalization if requested
             if (options.normalize) {
-                // Prioritize viewBox dimensions over rendered dimensions
-                const viewBox = this.svg.viewBox.baseVal;
-                const width = options.width || (viewBox ? viewBox.width : this.svg.width.baseVal.value);
-                const height = options.height || (viewBox ? viewBox.height : this.svg.height.baseVal.value);
-                
+                const { width, height } = this._getExportDimensions(options);
                 return this.normalizeCoordinates(result, width, height);
             }
-            
+
             return result;
         }
 
@@ -2453,14 +2302,14 @@ const MarkinJS = (function() {
         exportSelectedAnnotation(options = {}) {
             const selectedElement = this.selection.getSelected();
             if (!selectedElement) {
-                console.warn('No element selected');
+                this._log('warn', 'No element selected');
                 return null;
             }
-            
+
             let result;
-            
+
             // If the selected element is already a group, export it
-            if (selectedElement.tagName.toLowerCase() === 'g' && 
+            if (selectedElement.tagName.toLowerCase() === 'g' &&
                 selectedElement.getAttribute('data-annotation-group') === 'true') {
                 result = this.exportAnnotation(selectedElement);
             } else {
@@ -2469,156 +2318,30 @@ const MarkinJS = (function() {
                 if (parentGroup) {
                     result = this.exportAnnotation(parentGroup);
                 } else {
-                    // If no valid annotation group found, return object with just the element data
                     result = {
                         type: 'element',
                         data: this.getElementData(selectedElement)
                     };
                 }
             }
-            
-            // Apply normalization if requested
+
             if (result && options.normalize) {
-                // Prioritize viewBox dimensions over rendered dimensions
-                const viewBox = this.svg.viewBox.baseVal;
-                const width = options.width || (viewBox ? viewBox.width : this.svg.width.baseVal.value);
-                const height = options.height || (viewBox ? viewBox.height : this.svg.height.baseVal.value);
-                
+                const { width, height } = this._getExportDimensions(options);
                 return this.normalizeCoordinates(result, width, height);
             }
-            
+
             return result;
         }
 
         // Get a JSON string of all annotations
         getAnnotationsAsJSON(options = {}) {
-            const annotationData = this.exportAllAnnotations();
-            
-            // Apply normalization if requested
-            if (options && options.normalize) {
-                // Prioritize viewBox dimensions over rendered dimensions
-                const viewBox = this.svg.viewBox.baseVal;
-                const width = options.width || (viewBox ? viewBox.width : this.svg.width.baseVal.value);
-                const height = options.height || (viewBox ? viewBox.height : this.svg.height.baseVal.value);
-                
-                // Normalize all annotations
-                if (annotationData.annotations && Array.isArray(annotationData.annotations)) {
-                    // Add normalization info
-                    annotationData.normalized = true;
-                    annotationData.normalization_width = width;
-                    annotationData.normalization_height = height;
-                    
-                    // Process each annotation
-                    annotationData.annotations.forEach(annotation => {
-                        // Normalize bbox if present
-                        if (annotation.bbox) {
-                            annotation.bbox.x = annotation.bbox.x / width;
-                            annotation.bbox.y = annotation.bbox.y / height;
-                            annotation.bbox.width = annotation.bbox.width / width;
-                            annotation.bbox.height = annotation.bbox.height / height;
-                            annotation.bbox.normalized = true;
-                        }
-                        
-                        // Normalize polygon points if present
-                        if (annotation.polygon && annotation.polygon.points) {
-                            annotation.polygon.points = annotation.polygon.points.map(point => ({
-                                x: point.x / width,
-                                y: point.y / height
-                            }));
-                            annotation.polygon.normalized = true;
-                        }
-                        
-                        // Normalize segmentation (flat array) if present
-                        if (annotation.segmentation && Array.isArray(annotation.segmentation)) {
-                            for (let i = 0; i < annotation.segmentation.length; i += 2) {
-                                if (i + 1 < annotation.segmentation.length) {
-                                    annotation.segmentation[i] = annotation.segmentation[i] / width;
-                                    annotation.segmentation[i + 1] = annotation.segmentation[i + 1] / height;
-                                }
-                            }
-                            annotation.segmentation_normalized = true;
-                        }
-                        
-                        // Normalize keypoints if present
-                        if (annotation.keypoints && Array.isArray(annotation.keypoints)) {
-                            annotation.keypoints.forEach(keypoint => {
-                                if (keypoint.point && keypoint.point.length === 2) {
-                                    keypoint.point = [
-                                        keypoint.point[0] / width,
-                                        keypoint.point[1] / height
-                                    ];
-                                }
-                            });
-                            annotation.keypoints_normalized = true;
-                        }
-                    });
-                }
-            }
-            
-            return JSON.stringify(annotationData, null, 2);
+            return JSON.stringify(this.exportAllAnnotations(options), null, 2);
         }
 
         // Get a JSON string of the selected annotation
         getSelectedAnnotationAsJSON(options = {}) {
-            const selected = this.exportSelectedAnnotation();
-            if (!selected) return null;
-            
-            // Apply normalization if requested
-            if (options && options.normalize) {
-                // Prioritize viewBox dimensions over rendered dimensions
-                const viewBox = this.svg.viewBox.baseVal;
-                const width = options.width || (viewBox ? viewBox.width : this.svg.width.baseVal.value);
-                const height = options.height || (viewBox ? viewBox.height : this.svg.height.baseVal.value);
-                
-                // Add normalization info
-                selected.normalized = true;
-                selected.normalization_width = width;
-                selected.normalization_height = height;
-                
-                // Normalize bbox if present
-                if (selected.bbox) {
-                    selected.bbox.x = selected.bbox.x / width;
-                    selected.bbox.y = selected.bbox.y / height;
-                    selected.bbox.width = selected.bbox.width / width;
-                    selected.bbox.height = selected.bbox.height / height;
-                    selected.bbox.normalized = true;
-                }
-                
-                // Normalize polygon points if present
-                if (selected.polygon && selected.polygon.points) {
-                    selected.polygon.points = selected.polygon.points.map(point => ({
-                        x: point.x / width,
-                        y: point.y / height
-                    }));
-                    selected.polygon.normalized = true;
-                }
-                
-                // Normalize segmentation (flat array) if present
-                if (selected.segmentation && Array.isArray(selected.segmentation)) {
-                    for (let i = 0; i < selected.segmentation.length; i += 2) {
-                        if (i + 1 < selected.segmentation.length) {
-                            selected.segmentation[i] = selected.segmentation[i] / width;
-                            selected.segmentation[i + 1] = selected.segmentation[i + 1] / height;
-                        }
-                    }
-                    selected.segmentation_normalized = true;
-                }
-                
-                // Normalize keypoints if present
-                if (selected.keypoints && Array.isArray(selected.keypoints)) {
-                    selected.keypoints.forEach(keypoint => {
-                        if (keypoint.point && keypoint.point.length === 2) {
-                            keypoint.point = [
-                                keypoint.point[0] / width,
-                                keypoint.point[1] / height
-                            ];
-                        }
-                    });
-                    selected.keypoints_normalized = true;
-                }
-            }
-            
-            return JSON.stringify(selected, null, 2);
+            const result = this.exportSelectedAnnotation(options);
+            return result ? JSON.stringify(result, null, 2) : null;
         }
 
         // Public method to set requireSelectionToDrag option
@@ -2631,11 +2354,7 @@ const MarkinJS = (function() {
             });
         }
         
-        // Deselect any selected element (public method)
-        deselect() {
-            this.selection.deselect();
-        }
-        
+                
         // Utility method to get current options
         getOptions() {
             return { ...this.options };
@@ -2649,7 +2368,7 @@ const MarkinJS = (function() {
                 // Use selected element if no element provided
                 const selected = this.selection.getSelected();
                 if (!selected) {
-                    console.error('No element selected and no element provided');
+                    this._log('error', 'No element selected and no element provided');
                     return null;
                 }
                 group = selected.tagName.toLowerCase() === 'g' ? 
@@ -2660,14 +2379,14 @@ const MarkinJS = (function() {
             }
             
             if (!group || !group.getAttribute('data-annotation-group')) {
-                console.error('Cannot find valid annotation group');
+                this._log('error', 'Cannot find valid annotation group');
                 return null;
             }
             
             // Get annotation UUID
             const uuid = group.getAttribute('data-uuid');
             if (!uuid) {
-                console.error('Annotation group missing UUID');
+                this._log('error', 'Annotation group missing UUID');
                 return null;
             }
             
@@ -2713,10 +2432,7 @@ const MarkinJS = (function() {
             
             // Add to the annotation group
             group.appendChild(circle);
-            
-            // Add direct drag capabilities to the keypoint
-            this.addDirectDragHandler(circle);
-            
+
             // Save state if history is enabled
             this.saveState('add_keypoint');
             
@@ -2766,7 +2482,7 @@ const MarkinJS = (function() {
             }
             
             if (!existingGroup) {
-                console.error('No existing annotation found to update');
+                this._log('error', 'No existing annotation found to update');
                 return null;
             }
             
@@ -2872,7 +2588,7 @@ const MarkinJS = (function() {
             if (tagName === 'polygon') {
                 this.showPolygonVertices(element);
             } else if (tagName === 'rect') {
-                this.showRectHandles(element);
+                this.showCornerHandles(element);
             } else if (tagName === 'circle') {
                 this.showCircleHandles(element);
             } else if (tagName === 'g') {
@@ -2888,19 +2604,19 @@ const MarkinJS = (function() {
                         element.setAttribute('data-has-selected-child', 'true');
                         firstChild.setAttribute('data-selected', 'true');
                         firstChild.setAttribute('stroke-dasharray', '5,5');
-                        this.showRectHandles(firstChild);
+                        this.showCornerHandles(firstChild);
                     }
                 }
             }
         }
         
-        // Add handles for a rectangle
-        showRectHandles(rect) {
+        // Add handles for a rectangle (corner handles only)
+        showCornerHandles(rect) {
             const x = parseFloat(rect.getAttribute('x'));
             const y = parseFloat(rect.getAttribute('y'));
             const width = parseFloat(rect.getAttribute('width'));
             const height = parseFloat(rect.getAttribute('height'));
-            
+
             // Create corner handles only, no center move handle
             this.createHandle(x, y, 0, rect, 'corner-tl'); // Top-left
             this.createHandle(x + width, y, 1, rect, 'corner-tr'); // Top-right
@@ -3023,22 +2739,8 @@ const MarkinJS = (function() {
         // Calculate the center of a polygon
         calculatePolygonCenter(points) {
             if (!points || points.length === 0) return { x: 0, y: 0 };
-            
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            
-            // Find bounding box
-            points.forEach(point => {
-                minX = Math.min(minX, point.x);
-                minY = Math.min(minY, point.y);
-                maxX = Math.max(maxX, point.x);
-                maxY = Math.max(maxY, point.y);
-            });
-            
-            // Return center
-            return {
-                x: (minX + maxX) / 2,
-                y: (minY + maxY) / 2
-            };
+            const b = utils.polygonBounds(points);
+            return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
         }
         
         // Add a cross indicator to a circle
@@ -3215,16 +2917,19 @@ const MarkinJS = (function() {
             this.redoStack = [];
         }
 
+        // Snapshot only the annotation groups — handles and other transient UI
+        // are re-derived on demand. Much cheaper than cloning the whole SVG.
+        _snapshot() {
+            const groups = this.annotator.svg.querySelectorAll('g[data-annotation-group="true"]');
+            return Array.from(groups, g => g.cloneNode(true));
+        }
+
         saveState(action = 'unknown') {
             // Clear redo stack when a new action is performed
             this.redoStack = [];
 
-            // Get current SVG state
-            const state = this.annotator.svg.cloneNode(true);
-
-            // Add to undo stack
             this.undoStack.push({
-                state,
+                groups: this._snapshot(),
                 action,
                 timestamp: Date.now()
             });
@@ -3238,43 +2943,47 @@ const MarkinJS = (function() {
         undo() {
             if (this.undoStack.length <= 1) return false;
 
-            // Move current state to redo stack
             const currentState = this.undoStack.pop();
             this.redoStack.push(currentState);
 
-            // Apply the previous state
             const prevState = this.undoStack[this.undoStack.length - 1];
-            this.applyState(prevState.state);
+            this.applyState(prevState);
             return true;
         }
 
         redo() {
             if (this.redoStack.length === 0) return false;
 
-            // Get next state from redo stack
             const nextState = this.redoStack.pop();
             this.undoStack.push(nextState);
 
-            // Apply the state
-            this.applyState(nextState.state);
+            this.applyState(nextState);
             return true;
         }
 
-        applyState(savedSvg) {
-            // Temporarily disable events while applying state
+        // Apply a snapshot by swapping the annotation groups currently in the SVG
+        // with the snapshot's clones. Clears transient handles first.
+        applyState(snapshot) {
+            if (!snapshot || !snapshot.groups) return;
+
+            const svg = this.annotator.svg;
+            if (!svg) return;
+
             const wasEnabled = this.annotator.enabled;
             this.annotator.disable();
 
-            // Replace the current SVG with the saved state
-            const parent = this.annotator.svg.parentNode;
-            if (!parent) return;
-            parent.replaceChild(savedSvg, this.annotator.svg);
-            this.annotator.svg = savedSvg;
+            // Clear any visible handles/indicators so they don't linger
+            this.annotator.handleManager.clearHandles();
 
-            // Re-initialize references and event handlers
-            this.annotator.refreshReferences();
+            // Remove current annotation groups
+            svg.querySelectorAll('g[data-annotation-group="true"]').forEach(g => g.remove());
 
-            // Re-enable if it was enabled before
+            // Re-insert snapshot clones
+            snapshot.groups.forEach(g => svg.appendChild(g.cloneNode(true)));
+
+            // Containment cache must be rebuilt — containers may have changed
+            this.annotator.containmentCache = null;
+
             if (wasEnabled) this.annotator.enable();
         }
 
@@ -3289,83 +2998,80 @@ const MarkinJS = (function() {
         clearHistory() {
             this.undoStack = [];
             this.redoStack = [];
-            // Save the current state as the initial state
             this.saveState('initial');
         }
+    }
+
+    // Build the shared public API object for an annotator instance
+    function buildPublicAPI(annotator) {
+        return {
+            enable: annotator.enable.bind(annotator),
+            disable: annotator.disable.bind(annotator),
+            setZoom: annotator.setZoom.bind(annotator),
+            enableKeyboardControls: annotator.enableKeyboardControls.bind(annotator),
+            disableKeyboardControls: annotator.disableKeyboardControls.bind(annotator),
+            getSelectedElement: annotator.getSelectedElement.bind(annotator),
+            deselect: annotator.selection.deselect.bind(annotator.selection),
+            deleteSelectedElement: annotator.deleteSelectedElement.bind(annotator),
+            deleteElement: annotator.deleteElement.bind(annotator),
+            deleteGroup: annotator.deleteGroup.bind(annotator),
+            setDeletionRules: function(rules) { annotator.options.deletionRules = rules; },
+            setRequireSelectionToDrag: annotator.setRequireSelectionToDrag.bind(annotator),
+            on: annotator.events.on.bind(annotator.events),
+            off: annotator.events.off.bind(annotator.events),
+            createAnnotation: annotator.createAnnotation.bind(annotator),
+            addKeypoint: annotator.addKeypoint.bind(annotator),
+            updateAnnotation: annotator.updateAnnotation.bind(annotator),
+            exportAnnotation: annotator.exportAnnotation.bind(annotator),
+            exportAllAnnotations: annotator.exportAllAnnotations.bind(annotator),
+            exportSelectedAnnotation: annotator.exportSelectedAnnotation.bind(annotator),
+            getAnnotationsAsJSON: annotator.getAnnotationsAsJSON.bind(annotator),
+            getSelectedAnnotationAsJSON: annotator.getSelectedAnnotationAsJSON.bind(annotator),
+            saveState: annotator.saveState.bind(annotator),
+            undo: annotator.undo.bind(annotator),
+            redo: annotator.redo.bind(annotator),
+            clearHistory: annotator.clearHistory.bind(annotator),
+            history: annotator.history,
+        };
     }
 
     // Return public API
     return {
         version: VERSION,
-        
-        // Main creator function
+
+        /**
+         * Create an annotator attached to an existing SVG element.
+         * @param {string} svgId - ID of the SVG element in the document.
+         * @param {object} [options] - Configuration.
+         * @param {boolean} [options.bindElements=true] - Link keypoints/polygons to their bbox.
+         * @param {boolean} [options.bboxContainPolygon=true] - Keep polygons inside bbox.
+         * @param {boolean} [options.bboxContainKeypoints=true] - Keep keypoints inside bbox.
+         * @param {boolean} [options.requireBbox=false] - Always create a bbox for new annotations.
+         * @param {boolean} [options.requireSelectionToDrag=true] - Only drag after selection.
+         * @param {boolean} [options.keyboardControls=false] - Listen for keyboard shortcuts.
+         * @param {boolean} [options.historyEnabled=true] - Enable undo/redo.
+         * @param {boolean} [options.strict=false] - Throw TypeError instead of logging on invalid input.
+         * @param {boolean} [options.silent=false] - Suppress all library logging.
+         * @param {function} [options.logger] - Custom logger(level, message).
+         * @returns {object} Public API instance.
+         * @throws {Error} If the SVG element is not found.
+         */
         createAnnotator: function(svgId, options = {}) {
             const annotator = new SVGAnnotator(svgId, options);
-            
-            // Return public API for this instance
             return {
-                // Core methods
-                enable: annotator.enable.bind(annotator),
-                disable: annotator.disable.bind(annotator),
-                setZoom: annotator.setZoom.bind(annotator),
-                
-                // Keyboard control methods
-                enableKeyboardControls: annotator.enableKeyboardControls.bind(annotator),
-                disableKeyboardControls: annotator.disableKeyboardControls.bind(annotator),
-                
-                // Selection methods
-                getSelectedElement: annotator.getSelectedElement.bind(annotator),
-                deselect: annotator.deselect.bind(annotator),
-                
-                // Deletion methods
-                deleteSelectedElement: annotator.deleteSelectedElement.bind(annotator),
-                deleteElement: annotator.deleteElement.bind(annotator),
-                deleteGroup: annotator.deleteGroup.bind(annotator),
-                
-                // Configure deletion rules
-                setDeletionRules: function(rules) {
-                    annotator.options.deletionRules = rules;
-                },
-                
-                // Element drag behavior configuration
-                setRequireSelectionToDrag: annotator.setRequireSelectionToDrag.bind(annotator),
-                
-                // Events
-                on: annotator.events.on.bind(annotator.events),
-                off: annotator.events.off.bind(annotator.events),
-                
-                // Annotation methods
-                createAnnotation: annotator.createAnnotation.bind(annotator),
-                addKeypoint: annotator.addKeypoint.bind(annotator),
-                updateAnnotation: annotator.updateAnnotation.bind(annotator),
-                
-                // Export methods
-                exportAnnotation: annotator.exportAnnotation.bind(annotator),
-                exportAllAnnotations: annotator.exportAllAnnotations.bind(annotator),
-                exportSelectedAnnotation: annotator.exportSelectedAnnotation.bind(annotator),
-                getAnnotationsAsJSON: annotator.getAnnotationsAsJSON.bind(annotator),
-                getSelectedAnnotationAsJSON: annotator.getSelectedAnnotationAsJSON.bind(annotator),
-                
-                // History management methods
-                saveState: annotator.saveState.bind(annotator),
-                undo: annotator.undo.bind(annotator),
-                redo: annotator.redo.bind(annotator),
-                clearHistory: annotator.clearHistory.bind(annotator),
-                history: annotator.history,  // Expose the history manager for UI updates
-                
-                // SVG-specific method (equivalent to getSVGElement in ImageAnnotator)
-                getSVGElement: function() {
-                    return annotator.svg;
-                },
-
-                // Destroy the annotator and clean up all resources
-                destroy: function() {
-                    annotator.destroy();
-                }
+                ...buildPublicAPI(annotator),
+                getSVGElement: function() { return annotator.svg; },
+                destroy: function() { annotator.destroy(); }
             };
         },
 
-        // Create an annotator that overlays an image
+        /**
+         * Create an annotator that overlays an existing <img>.
+         * Wraps the image in a container and inserts an SVG overlay at the same size.
+         * @param {string} imageId - ID of the image element.
+         * @param {object} [options] - Same options as createAnnotator.
+         * @returns {object|null} Public API with extra getImageElement/getContainerElement helpers, or null if the image isn't found.
+         */
         createImageAnnotator: function(imageId, options = {}) {
             // Find the image element
             const image = document.getElementById(imageId);
@@ -3373,27 +3079,27 @@ const MarkinJS = (function() {
                 console.error(`Image element with id '${imageId}' not found`);
                 return null;
             }
-            
+
             // Get the parent element where we'll insert the SVG
             const parent = image.parentElement;
             if (!parent) {
                 console.error(`Image element with id '${imageId}' doesn't have a parent`);
                 return null;
             }
-            
+
             // Create a container div with relative positioning
             const container = document.createElement('div');
             container.style.position = 'relative';
             container.style.display = 'inline-block';
             container.style.lineHeight = '0'; // Prevent extra space under the image
-            
+
             // Generate a unique ID for the SVG element
             const svgId = `markin-svg-${imageId}`;
-            
+
             // Wrap the image with the container
             parent.insertBefore(container, image);
             container.appendChild(image);
-            
+
             // Create the SVG element with absolute positioning
             const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
             svg.setAttribute('id', svgId);
@@ -3402,120 +3108,56 @@ const MarkinJS = (function() {
             svg.style.left = '0';
             svg.style.pointerEvents = 'none'; // Allow clicks to pass through to the image by default
             container.appendChild(svg);
-            
+
             // Function to update SVG dimensions to match the image
             const updateSVGDimensions = () => {
                 // Get the original/natural dimensions of the image
                 const naturalWidth = image.naturalWidth;
                 const naturalHeight = image.naturalHeight;
-                
+
                 // Remove explicit width/height and use CSS to make SVG fill container
                 svg.removeAttribute('width');
                 svg.removeAttribute('height');
                 svg.style.width = '100%';
                 svg.style.height = '100%';
-                
+
                 // Set viewBox to use the natural image dimensions
                 svg.setAttribute('viewBox', `0 0 ${naturalWidth} ${naturalHeight}`);
-                
+
                 // Enable pointer events on the SVG so it can receive interactions
                 svg.style.pointerEvents = 'auto';
             };
-            
+
             // Set initial dimensions
             updateSVGDimensions();
-            
+
             // Update dimensions when the image is loaded
             if (!image.complete) {
                 image.addEventListener('load', updateSVGDimensions);
             }
-            
+
             // Update dimensions when the window is resized
             window.addEventListener('resize', updateSVGDimensions);
-            
+
             // Create the annotator with the generated SVG
             const annotator = new SVGAnnotator(svgId, options);
-            
+
             // Store additional references
             annotator.image = image;
             annotator.svgOverlay = svg;
             annotator.updateSVGDimensions = updateSVGDimensions;
-            
+
             // Enhanced API with image-specific methods
             return {
-                // Core methods
-                enable: annotator.enable.bind(annotator),
-                disable: annotator.disable.bind(annotator),
-                setZoom: annotator.setZoom.bind(annotator),
-                
-                // Keyboard control methods
-                enableKeyboardControls: annotator.enableKeyboardControls.bind(annotator),
-                disableKeyboardControls: annotator.disableKeyboardControls.bind(annotator),
-                
-                // Selection methods
-                getSelectedElement: annotator.getSelectedElement.bind(annotator),
-                deselect: annotator.deselect.bind(annotator),
-                
-                // Deletion methods
-                deleteSelectedElement: annotator.deleteSelectedElement.bind(annotator),
-                deleteElement: annotator.deleteElement.bind(annotator),
-                deleteGroup: annotator.deleteGroup.bind(annotator),
-                
-                // Configure deletion rules
-                setDeletionRules: function(rules) {
-                    annotator.options.deletionRules = rules;
-                },
-                
-                // Element drag behavior configuration
-                setRequireSelectionToDrag: annotator.setRequireSelectionToDrag.bind(annotator),
-                
-                // Events
-                on: annotator.events.on.bind(annotator.events),
-                off: annotator.events.off.bind(annotator.events),
-                
-                // Annotation methods
-                createAnnotation: annotator.createAnnotation.bind(annotator),
-                addKeypoint: annotator.addKeypoint.bind(annotator),
-                updateAnnotation: annotator.updateAnnotation.bind(annotator),
-                
-                // Export methods
-                exportAnnotation: annotator.exportAnnotation.bind(annotator),
-                exportAllAnnotations: annotator.exportAllAnnotations.bind(annotator),
-                exportSelectedAnnotation: annotator.exportSelectedAnnotation.bind(annotator),
-                getAnnotationsAsJSON: annotator.getAnnotationsAsJSON.bind(annotator),
-                getSelectedAnnotationAsJSON: annotator.getSelectedAnnotationAsJSON.bind(annotator),
-                
-                // History management methods
-                saveState: annotator.saveState.bind(annotator),
-                undo: annotator.undo.bind(annotator),
-                redo: annotator.redo.bind(annotator),
-                clearHistory: annotator.clearHistory.bind(annotator),
-                history: annotator.history,  // Expose the history manager for UI updates
-                
-                // Image-specific methods
-                getImageElement: function() {
-                    return image;
-                },
-                getSVGElement: function() {
-                    return svg;
-                },
+                ...buildPublicAPI(annotator),
+                getImageElement: function() { return image; },
+                getSVGElement: function() { return svg; },
                 updateDimensions: updateSVGDimensions,
-                getContainerElement: function() {
-                    return container;
-                },
-
-                // Destroy the annotator and clean up all resources
+                getContainerElement: function() { return container; },
                 destroy: function() {
-                    // Remove window resize listener
                     window.removeEventListener('resize', updateSVGDimensions);
-
-                    // Remove image load listener
                     image.removeEventListener('load', updateSVGDimensions);
-
-                    // Destroy the annotator
                     annotator.destroy();
-
-                    // Unwrap the image from the container
                     if (container.parentNode) {
                         container.parentNode.insertBefore(image, container);
                         container.parentNode.removeChild(container);
