@@ -311,4 +311,161 @@ describe('SVGAnnotator', () => {
             expect(ann2.polygon).toBeDefined();
         });
     });
+
+    describe('Skeleton', () => {
+        const kps = () => [
+            { name: 'nose',      point: [100, 50] },
+            { name: 'left_eye',  point: [90, 40] },
+            { name: 'right_eye', point: [110, 40] }
+        ];
+
+        it('should create skeleton edges from numeric-index pairs', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-1',
+                keypoints: kps(),
+                skeleton: [[0, 1], [0, 2]]
+            });
+            const group = svg.querySelector('g[data-uuid="sk-1"]');
+            const edges = group.querySelectorAll('line[data-role="skeleton-edge"]');
+            expect(edges.length).toBe(2);
+            expect(parseFloat(edges[0].getAttribute('x1'))).toBe(100);
+            expect(parseFloat(edges[0].getAttribute('y1'))).toBe(50);
+            expect(parseFloat(edges[0].getAttribute('x2'))).toBe(90);
+            expect(parseFloat(edges[0].getAttribute('y2'))).toBe(40);
+        });
+
+        it('should create skeleton edges from name references', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-2',
+                keypoints: kps(),
+                skeleton: [['nose', 'right_eye']]
+            });
+            const group = svg.querySelector('g[data-uuid="sk-2"]');
+            const edges = group.querySelectorAll('line[data-role="skeleton-edge"]');
+            expect(edges.length).toBe(1);
+            expect(parseFloat(edges[0].getAttribute('x1'))).toBe(100);
+            expect(parseFloat(edges[0].getAttribute('y1'))).toBe(50);
+            expect(parseFloat(edges[0].getAttribute('x2'))).toBe(110);
+            expect(parseFloat(edges[0].getAttribute('y2'))).toBe(40);
+        });
+
+        it('should accept mixed index and name references', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-3',
+                keypoints: kps(),
+                skeleton: [[0, 'left_eye'], ['nose', 2]]
+            });
+            const group = svg.querySelector('g[data-uuid="sk-3"]');
+            expect(group.querySelectorAll('line[data-role="skeleton-edge"]').length).toBe(2);
+        });
+
+        it('should render edges BEFORE keypoint circles (so circles sit on top)', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-z',
+                keypoints: kps(),
+                skeleton: [[0, 1]]
+            });
+            const group = svg.querySelector('g[data-uuid="sk-z"]');
+            const children = Array.from(group.children);
+            const firstEdgeIdx = children.findIndex(c => c.getAttribute('data-role') === 'skeleton-edge');
+            const firstKpIdx = children.findIndex(c => c.getAttribute('data-role') === 'keypoint');
+            expect(firstEdgeIdx).toBeGreaterThanOrEqual(0);
+            expect(firstKpIdx).toBeGreaterThan(firstEdgeIdx);
+        });
+
+        it('should apply skeletonStyle overrides', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-style',
+                keypoints: kps(),
+                skeleton: [[0, 1]],
+                skeletonStyle: { stroke: '#00FF00', strokeWidth: 4, strokeOpacity: 0.5 }
+            });
+            const edge = svg.querySelector('g[data-uuid="sk-style"] line[data-role="skeleton-edge"]');
+            expect(edge.getAttribute('stroke')).toBe('#00FF00');
+            expect(edge.getAttribute('stroke-width')).toBe('4');
+            expect(edge.getAttribute('stroke-opacity')).toBe('0.5');
+        });
+
+        it('should mark edges with data-ignore-containment', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-ign',
+                keypoints: kps(),
+                skeleton: [[0, 1]]
+            });
+            const edge = svg.querySelector('g[data-uuid="sk-ign"] line[data-role="skeleton-edge"]');
+            expect(edge.getAttribute('data-ignore-containment')).toBe('true');
+        });
+
+        it('should reject out-of-range numeric indices', () => {
+            const result = annotator.createAnnotation({
+                keypoints: kps(),
+                skeleton: [[0, 9]]
+            });
+            expect(result).toBeNull();
+        });
+
+        it('should reject unknown name references', () => {
+            const result = annotator.createAnnotation({
+                keypoints: kps(),
+                skeleton: [['nose', 'left_ear']]
+            });
+            expect(result).toBeNull();
+        });
+
+        it('should reject non-array skeleton', () => {
+            const result = annotator.createAnnotation({
+                keypoints: kps(),
+                skeleton: 'not-an-array'
+            });
+            expect(result).toBeNull();
+        });
+
+        it('should reject unknown skeletonStyle fields', () => {
+            const result = annotator.createAnnotation({
+                keypoints: kps(),
+                skeleton: [[0, 1]],
+                skeletonStyle: { bogus: 'x' }
+            });
+            expect(result).toBeNull();
+        });
+
+        it('should not export skeleton field (display-only feature)', () => {
+            annotator.createAnnotation({
+                uuid: 'sk-exp',
+                keypoints: kps(),
+                skeleton: [[0, 1]]
+            });
+            const group = svg.querySelector('g[data-uuid="sk-exp"]');
+            const out = annotator.exportAnnotation(group);
+            expect(out.keypoints).toBeDefined();
+            expect(out.skeleton).toBeUndefined();
+        });
+
+        it('should apply annotator-level keypointSkeleton default', () => {
+            const a2 = MarkinJS.createAnnotator('test-svg', {
+                keypointSkeleton: [[0, 1]]
+            });
+            a2.createAnnotation({
+                uuid: 'sk-def',
+                keypoints: kps()
+            });
+            const edges = svg.querySelectorAll('g[data-uuid="sk-def"] line[data-role="skeleton-edge"]');
+            expect(edges.length).toBe(1);
+            if (a2.destroy) a2.destroy();
+        });
+
+        it('should treat skeleton: [] as explicit disable even with annotator default set', () => {
+            const a2 = MarkinJS.createAnnotator('test-svg', {
+                keypointSkeleton: [[0, 1]]
+            });
+            a2.createAnnotation({
+                uuid: 'sk-off',
+                keypoints: kps(),
+                skeleton: []
+            });
+            const edges = svg.querySelectorAll('g[data-uuid="sk-off"] line[data-role="skeleton-edge"]');
+            expect(edges.length).toBe(0);
+            if (a2.destroy) a2.destroy();
+        });
+    });
 });
