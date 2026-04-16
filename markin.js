@@ -943,20 +943,20 @@ const MarkinJS = (function() {
             } else if (tagName === 'circle') {
                 const cx = parseFloat(element.getAttribute('cx'));
                 const cy = parseFloat(element.getAttribute('cy'));
-                
+
                 element.setAttribute('cx', cx + deltaX);
                 element.setAttribute('cy', cy + deltaY);
-                
+
                 // Update handle position if this is the selected element
                 if (element === this.selection.getSelected()) {
                     this.handleManager.updateCircleHandlePosition(element);
                 }
-                
+
                 // Update cross indicator if the circle is selected
                 if (element.hasAttribute('data-selected')) {
                     this.handleManager.updateCrossIndicator(element);
                 }
-                
+
                 // Apply containment after updating position
                 this.enforceContainment(element);
                 
@@ -1323,6 +1323,37 @@ const MarkinJS = (function() {
             return polygon;
         }
 
+        // Draw static lines between keypoint pairs for visual display. Display-only:
+        // not tracked after creation, not updated when keypoints move, not exported.
+        _buildSkeleton(settings, group) {
+            if (!settings.skeleton || settings.skeleton.length === 0) return;
+            if (!settings.keypoints || settings.keypoints.length === 0) return;
+
+            const kps = settings.keypoints;
+            const nameToIndex = {};
+            kps.forEach((kp, i) => { if (kp && kp.name) nameToIndex[kp.name] = i; });
+            const resolve = ref => (typeof ref === 'number') ? ref : nameToIndex[ref];
+
+            const style = settings.skeletonStyle || {};
+            const attrs = {
+                stroke: style.stroke || settings.stroke || '#0000FF',
+                strokeWidth: style.strokeWidth != null ? style.strokeWidth : 2,
+                strokeOpacity: style.strokeOpacity != null ? style.strokeOpacity : 0.8,
+                vectorEffect: 'non-scaling-stroke',
+                'data-role': 'skeleton-edge',
+                'data-ignore-containment': 'true'
+            };
+            if (style.strokeDasharray) attrs.strokeDasharray = style.strokeDasharray;
+
+            settings.skeleton.forEach(edge => {
+                const a = kps[resolve(edge[0])];
+                const b = kps[resolve(edge[1])];
+                if (!a || !a.point || !b || !b.point) return;
+                const line = this.elementFactory.createLine(a.point[0], a.point[1], b.point[0], b.point[1], attrs);
+                group.appendChild(line);
+            });
+        }
+
         // Build keypoint children for an annotation, appending to group.
         _buildKeypoints(settings, group, bbox) {
             if (!settings.keypoints || settings.keypoints.length === 0) return;
@@ -1394,6 +1425,44 @@ const MarkinJS = (function() {
                     return 'Invalid segmentation: all values must be valid numbers';
                 }
             }
+            if (options.skeleton !== undefined && options.skeleton !== null) {
+                if (!Array.isArray(options.skeleton)) {
+                    return 'Invalid skeleton: must be an array of [from, to] pairs';
+                }
+                if (options.skeleton.length > 0) {
+                    const kps = Array.isArray(options.keypoints) ? options.keypoints : [];
+                    const names = new Set(kps.map(kp => kp && kp.name).filter(Boolean));
+                    for (const edge of options.skeleton) {
+                        if (!Array.isArray(edge) || edge.length !== 2) {
+                            return 'Invalid skeleton: each entry must be a 2-tuple [from, to]';
+                        }
+                        for (const ref of edge) {
+                            if (typeof ref === 'number') {
+                                if (!Number.isInteger(ref) || ref < 0 || ref >= kps.length) {
+                                    return `Invalid skeleton: index ${ref} out of range for ${kps.length} keypoints`;
+                                }
+                            } else if (typeof ref === 'string') {
+                                if (!names.has(ref)) {
+                                    return `Invalid skeleton: unknown keypoint name "${ref}"`;
+                                }
+                            } else {
+                                return 'Invalid skeleton: references must be integer index or keypoint name';
+                            }
+                        }
+                    }
+                }
+            }
+            if (options.skeletonStyle !== undefined && options.skeletonStyle !== null) {
+                if (typeof options.skeletonStyle !== 'object' || Array.isArray(options.skeletonStyle)) {
+                    return 'Invalid skeletonStyle: must be an object';
+                }
+                const allowed = new Set(['stroke', 'strokeWidth', 'strokeOpacity', 'strokeDasharray']);
+                for (const key of Object.keys(options.skeletonStyle)) {
+                    if (!allowed.has(key)) {
+                        return `Invalid skeletonStyle: unknown field "${key}"`;
+                    }
+                }
+            }
             return null;
         }
 
@@ -1443,9 +1512,18 @@ const MarkinJS = (function() {
                 containRules: [], // Option for containment rules
                 deletionRules: this.options.deletionRules // Default to global deletion rules
             };
-            
+
             // Merge defaults with provided options
             const settings = {...defaults, ...options};
+
+            // Resolve skeleton defaults. Per-annotation `skeleton` takes precedence;
+            // `undefined` falls back to annotator-level default; `[]` means "explicitly none".
+            if (options.skeleton === undefined) {
+                settings.skeleton = this.options.keypointSkeleton || null;
+            }
+            if (options.skeletonStyle === undefined) {
+                settings.skeletonStyle = this.options.keypointSkeletonStyle || null;
+            }
             
             // Create annotation group
             const group = this.elementFactory.createGroup({
@@ -1470,6 +1548,7 @@ const MarkinJS = (function() {
             // Build child elements
             const bbox = this._buildBbox(settings, group);
             this._buildPolygon(settings, group, bbox);
+            this._buildSkeleton(settings, group);
             this._buildKeypoints(settings, group, bbox);
 
             // Select the newly created annotation (select the group)
@@ -1776,7 +1855,7 @@ const MarkinJS = (function() {
             
             // Apply containment - critical to do this AFTER updating position for direct moves
             this.enforceContainment(targetElement);
-            
+
             // Emit annotationmodified event
             this.events.emit('annotationmodified', {
                 element: targetElement,
@@ -1785,7 +1864,7 @@ const MarkinJS = (function() {
                 data: this.getElementData(targetElement)
             });
         }
-        
+
         // Handle rect resize
         handleRectResize(clientDeltaX, clientDeltaY) {
             const { handleType, targetElement } = this.dragInfo;
@@ -1942,7 +2021,7 @@ const MarkinJS = (function() {
                     
                     element.setAttribute('cx', newCx);
                     element.setAttribute('cy', newCy);
-                    
+
                     // Update cross indicator if selected
                     if (element.hasAttribute('data-selected')) {
                         this.handleManager.updateCrossIndicator(element);
@@ -2178,7 +2257,7 @@ const MarkinJS = (function() {
             const keypoints = group.querySelectorAll('circle[data-role="keypoint"]');
             if (keypoints.length > 0) {
                 annotation.keypoints = [];
-                
+
                 keypoints.forEach(keypoint => {
                     annotation.keypoints.push({
                         name: keypoint.getAttribute('data-label') || '',
