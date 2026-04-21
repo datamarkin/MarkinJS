@@ -3246,6 +3246,3 @@ const MarkinJS = (function() {
         }
     };
 })();
-
-// Module exports
-export default MarkinJS;
